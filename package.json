@@ -1,0 +1,13 @@
+{
+  "name": "lift-log",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first workout tracker. The app itself needs no build step and no dependencies — this file exists only for the browser smoke test.",
+  "scripts": {
+    "test": "node tools/smoke-test.mjs",
+    "serve": "npx --yes serve ."
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

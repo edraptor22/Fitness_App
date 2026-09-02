@@ -97,6 +97,17 @@ before pushing, or phones will keep serving the cached copy.
 
 Regenerate the icons with `powershell -File tools/make-icons.ps1`.
 
+There's an end-to-end smoke test that drives the whole app in an iPhone-sized
+browser and screenshots every screen into `tools/shots/`:
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
+The app itself has no dependencies — `package.json` exists only for that test.
+
 ### Layout
 
 ```
