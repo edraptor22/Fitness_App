@@ -60,22 +60,25 @@ await page.goto('http://localhost:8765/index.html');
 await page.waitForTimeout(900);
 await shot('01-today');
 
-await step('weekly progress rendered', async () => {
-  await page.waitForSelector('.meter');
+await step('weekly progress rings rendered', async () => {
+  await page.waitForSelector('.ring-row .ring-bar');
+  const n = await page.locator('.ring-wrap').count();
+  if (n < 2) throw new Error('expected a ring per discipline, got ' + n);
 });
 
-await step('open a scheduled workout', async () => {
-  const rows = page.locator('[data-wo]');
-  const n = await rows.count();
-  if (!n) throw new Error('no scheduled workouts on today');
-  // Prefer an exercise-style workout over the mobility check-off row.
-  let idx = 0;
-  for (let i = 0; i < n; i++) {
-    const hasTick = await rows.nth(i).locator('[data-tick]').count();
-    if (!hasTick) { idx = i; break; }
-  }
-  await rows.nth(idx).click();
+/* Start a named workout via the Add sheet — which day of the week the test
+   happens to run on then doesn't matter. */
+async function startWorkout(name) {
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill(name);
+  await page.waitForTimeout(250);
+  await page.locator('.sheet [data-start]').first().click();
   await page.waitForSelector('.ex-card');
+}
+
+await step('start a lifting workout', async () => {
+  await startWorkout('Lower Body');
 });
 await shot('02-session');
 
@@ -124,13 +127,7 @@ await step('progressive overload: next session shows last numbers', async () => 
   });
   await page.goto(`http://localhost:8765/index.html#/today?d=${nextWeek}`);
   await page.waitForTimeout(600);
-  const rows = page.locator('[data-wo]');
-  let idx = 0;
-  for (let i = 0; i < await rows.count(); i++) {
-    if (!(await rows.nth(i).locator('[data-tick]').count())) { idx = i; break; }
-  }
-  await rows.nth(idx).click();
-  await page.waitForSelector('.ex-card');
+  await startWorkout('Lower Body');
   const line = await page.locator('.ex-last').first().textContent();
   if (!/Last/.test(line)) throw new Error('no last-session line: ' + line);
   const prefilled = await page.locator('.set-row .stepper input').first().inputValue();
@@ -140,7 +137,9 @@ await step('progressive overload: next session shows last numbers', async () => 
 });
 
 await step('mobility one-tap complete', async () => {
-  const tick = page.locator('[data-tick]').first();
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  const tick = page.locator('[data-wo] [data-tick]').first();
   if (!(await tick.count())) throw new Error('no check-off workout found');
   await tick.click();
   await page.waitForTimeout(400);
@@ -179,6 +178,113 @@ await step('exercise detail', async () => {
   await page.locator('[data-ex]').first().click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${SHOTS}/11-exercise.png` });
+});
+
+/* ---------------------------------------------------- goals: countdown, weight, quotes */
+
+const EVENT_DATE = await page.evaluate(() => {
+  const d = new Date(); d.setDate(d.getDate() + 150);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+});
+
+await step('set a target date', async () => {
+  await page.goto('http://localhost:8765/index.html#/goals');
+  await page.waitForTimeout(600);
+  await page.locator('[data-addevent]').first().click();
+  await page.waitForSelector('.sheet');
+  await page.locator('.sheet [name=name]').fill('Work Classic');
+  await page.locator('.sheet [name=date]').fill(EVENT_DATE);
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(500);
+  const n = await page.locator('.hero-number').textContent();
+  if (Number(n.trim()) !== 150) throw new Error('countdown says ' + n);
+});
+await shot('13-goals-countdown');
+
+await step('countdown appears on Today', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  if (!(await page.locator('.countdown').count())) throw new Error('no countdown strip on Today');
+  const txt = await page.locator('.countdown-name').textContent();
+  if (!/Work Classic/.test(txt)) throw new Error('wrong event: ' + txt);
+});
+
+await step('daily quote shows and rotates by date', async () => {
+  const q1 = await page.locator('.quote').first().textContent();
+  await page.goto('http://localhost:8765/index.html#/today?d=' + EVENT_DATE);
+  await page.waitForTimeout(500);
+  const q2 = await page.locator('.quote').first().textContent();
+  if (!q1.trim()) throw new Error('quote empty');
+  if (q1 === q2) throw new Error('quote did not change on a different day');
+  console.log('     quote: ' + q1.replace(/\s+/g, ' ').trim().slice(0, 70));
+});
+
+await step('set a weight goal + generate milestones', async () => {
+  await page.goto('http://localhost:8765/index.html#/goals');
+  await page.waitForTimeout(500);
+  await page.locator('[data-editgoal]').first().click();
+  await page.waitForSelector('.sheet');
+  await page.locator('.sheet [name=start]').fill('195');
+  await page.locator('.sheet [name=target]').fill('175');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(500);
+
+  await page.locator('[data-genms]').click();
+  await page.waitForSelector('.sheet [name=step]');
+  await page.locator('.sheet [name=step]').fill('5');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(500);
+
+  const n = await page.locator('.ms-row').count();
+  if (n !== 4) throw new Error('expected 4 milestones (190/185/180/175), got ' + n);
+  await page.locator('.ms-reward').first().fill('New skate sharpening');
+  await page.waitForTimeout(300);
+});
+
+await step('logging weight crosses a milestone and pays the reward', async () => {
+  await page.locator('[data-w]').fill('195');
+  await page.locator('[data-savew]').click();
+  await page.waitForTimeout(500);
+  if (await page.locator('.sheet').count()) throw new Error('celebrated too early at 195');
+
+  await page.locator('[data-w]').fill('189');
+  await page.locator('[data-savew]').click();
+  await page.waitForTimeout(600);
+  const body = await page.locator('.sheet-body').textContent();
+  if (!/New skate sharpening/.test(body)) throw new Error('reward not shown: ' + body);
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(400);
+  if (!(await page.locator('.ms-row.hit').count())) throw new Error('milestone not marked hit');
+});
+await shot('14-goals-weight');
+
+await step('quotes can be turned off', async () => {
+  await page.goto('http://localhost:8765/index.html#/settings');
+  await page.waitForTimeout(500);
+  await page.locator('input[name=showQuotes]').click();
+  await page.waitForTimeout(400);
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(500);
+  if (await page.locator('.quote').count()) throw new Error('quote still showing after toggle off');
+  // put it back
+  await page.goto('http://localhost:8765/index.html#/settings');
+  await page.waitForTimeout(400);
+  await page.locator('input[name=showQuotes]').click();
+  await page.waitForTimeout(400);
+});
+
+await step('replace the quote list from pasted text', async () => {
+  await page.locator('[data-quotes]').click();
+  await page.waitForSelector('.sheet [data-quotes-text]');
+  await page.locator('.sheet [data-quotes-text]').fill(
+    '1. “Stay hard.” — David Goggins\n• “Discipline equals freedom.” — Jocko Willink');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(500);
+  const n = await page.evaluate(() => window.LiftLog.store.state.quotes.size);
+  if (n !== 2) throw new Error('expected 2 quotes, got ' + n);
+  const list = await page.evaluate(() => window.LiftLog.store.allQuotes().map((q) => q.text + '|' + q.author));
+  if (list[0] !== 'Stay hard.|David Goggins') throw new Error('bad parse: ' + list[0]);
 });
 
 await step('export produces valid json', async () => {

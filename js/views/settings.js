@@ -2,6 +2,7 @@
 
 import * as store from '../store.js';
 import { esc, on, sheet, toast, confirmSheet, switchRow } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { DOW_NAME, todayISO } from '../util.js';
 
 export async function render(ctx) {
@@ -10,6 +11,8 @@ export async function render(ctx) {
     sessions: store.state.sessions.size,
     exercises: store.state.exercises.size,
     plans: store.state.plans.size,
+    weights: store.state.weights.size,
+    quotes: store.state.quotes.size,
   };
 
   const html = `
@@ -32,6 +35,17 @@ export async function render(ctx) {
         </select></div>
       ${switchRow('Show last session', 'showLastSession', !!s.showLastSession,
         'The previous performance under each exercise while logging.')}
+      ${switchRow('Daily quote on Today', 'showQuotes', !!s.showQuotes)}
+    </div>
+
+    <div class="section-title">Daily quotes</div>
+    <div class="card">
+      <button class="row" data-quotes>
+        <span class="grow">
+          <div class="row-title">Edit the list</div>
+          <div class="row-sub">${counts.quotes} loaded · one shows each day, in order</div>
+        </span><span class="chev">${icon('chevron', 18)}</span>
+      </button>
     </div>
 
     <div class="section-title">Backup</div>
@@ -40,10 +54,10 @@ export async function render(ctx) {
         Everything lives on this device only. Export now and then — before a new
         phone, an iOS update, or clearing Safari data.
       </div>
-      <button class="row" data-export><span class="grow row-title">Export backup</span><span class="chev">&#8250;</span></button>
-      <button class="row" data-import><span class="grow row-title">Restore from backup</span><span class="chev">&#8250;</span></button>
+      <button class="row" data-export><span class="grow row-title">Export backup</span><span class="chev">${icon('chevron', 18)}</span></button>
+      <button class="row" data-import><span class="grow row-title">Restore from backup</span><span class="chev">${icon('chevron', 18)}</span></button>
       <div class="card-pad tiny dim">
-        ${counts.sessions} sessions · ${counts.exercises} exercises · ${counts.plans} plans
+        ${counts.sessions} sessions · ${counts.weights} weigh-ins · ${counts.exercises} exercises · ${counts.plans} plans
       </div>
     </div>
 
@@ -60,7 +74,7 @@ export async function render(ctx) {
         No server, so no push notifications. The reliable free option is the
         iPhone's own Shortcuts app.
       </div>
-      <button class="row" data-reminders><span class="grow row-title">How to set one up</span><span class="chev">&#8250;</span></button>
+      <button class="row" data-reminders><span class="grow row-title">How to set one up</span><span class="chev">${icon('chevron', 18)}</span></button>
     </div>
 
     <div class="section-title">Danger zone</div>
@@ -79,6 +93,12 @@ export async function render(ctx) {
 
     on(root, 'input[name=showLastSession]', 'change', (e, t) =>
       store.saveSettings({ showLastSession: t.checked }));
+
+    on(root, 'input[name=showQuotes]', 'change', async (e, t) => {
+      await store.saveSettings({ showQuotes: t.checked });
+    });
+
+    on(root, '[data-quotes]', 'click', () => quotesSheet(ctx));
 
     on(root, '[data-export]', 'click', doExport);
     on(root, '[data-import]', 'click', () => doImport(ctx));
@@ -162,6 +182,43 @@ function doImport(ctx) {
       store.importData(data)
         .then(() => { toast('Restored'); ctx.go('/today'); ctx.refresh(); })
         .catch((err) => toast(err.message));
+    },
+  });
+}
+
+/* --------------------------------------------------------------- quotes */
+
+function quotesSheet(ctx) {
+  const current = store.allQuotes()
+    .map((q) => (q.author ? `${q.text} — ${q.author}` : q.text))
+    .join('\n');
+
+  sheet({
+    title: 'Daily quotes',
+    body: `
+      <div class="card-pad small muted">One per line. Add <b>— Author</b> at the end
+      and it gets shown underneath. Numbered or bulleted lists paste fine — the
+      markers are stripped. Saving replaces the whole list.</div>
+      <div class="field">
+        <textarea data-quotes-text placeholder="Stay hard. — David Goggins"
+          style="height:260px;font-size:14px;line-height:1.5">${esc(current)}</textarea>
+      </div>
+      <div class="card-pad tiny dim" data-count>${store.state.quotes.size} quotes</div>`,
+    confirm: 'Save list',
+    onMount(b) {
+      const ta = b.querySelector('[data-quotes-text]');
+      const count = b.querySelector('[data-count]');
+      ta.addEventListener('input', () => {
+        const n = store.parseQuotes(ta.value).length;
+        count.textContent = `${n} ${n === 1 ? 'quote' : 'quotes'}`;
+      });
+    },
+    onConfirm(b) {
+      const rows = store.parseQuotes(b.querySelector('[data-quotes-text]').value);
+      store.replaceQuotes(rows).then(() => {
+        toast(rows.length ? `${rows.length} quotes saved` : 'Quotes cleared');
+        ctx.refresh();
+      });
     },
   });
 }

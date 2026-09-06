@@ -2,8 +2,10 @@
 
 import * as store from './store.js';
 import { toast, closeSheet } from './ui.js';
+import { icon } from './icons.js';
 
 import * as Today from './views/today.js';
+import * as Goals from './views/goals.js';
 import * as Session from './views/session.js';
 import * as Plans from './views/plans.js';
 import * as Plan from './views/plan.js';
@@ -15,6 +17,7 @@ import * as Settings from './views/settings.js';
 
 const ROUTES = [
   [/^\/today$/, Today, 'today'],
+  [/^\/goals$/, Goals, 'goals'],
   [/^\/session\/([^/]+)$/, Session, 'today'],
   [/^\/plans$/, Plans, 'plans'],
   [/^\/plan\/([^/]+)$/, Plan, 'plans'],
@@ -39,7 +42,9 @@ export function go(path, { replace = false } = {}) {
   else location.hash = path;
 }
 
-export function refresh() { render(true); }
+/** Re-render the current route in place. Await it before opening a sheet —
+    a render closes any open sheet, so celebrating first would flash and vanish. */
+export function refresh() { return render(true); }
 
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/today';
@@ -110,6 +115,10 @@ function applyTheme() {
 async function boot() {
   await store.load();
   applyTheme();
+
+  // Tab icons are declared in the markup and drawn once here.
+  document.querySelectorAll('#tabbar a[data-icon]').forEach((a) =>
+    a.insertAdjacentHTML('afterbegin', icon(a.dataset.icon, 22)));
   store.subscribe(applyTheme);
 
   window.addEventListener('hashchange', () => render());

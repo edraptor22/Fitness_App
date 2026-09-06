@@ -2,8 +2,9 @@
 
 import * as store from '../store.js';
 import { esc, on, sheet, toast, menuSheet, confirmSheet, promptSheet } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { DOW_NAME, dowOrder, KIND_LABEL, KIND_ORDER, uid } from '../util.js';
-import { summaryOf, kindGlyph } from './today.js';
+import { summaryOf } from './today.js';
 
 export async function render(ctx) {
   const id = ctx.params[0];
@@ -40,12 +41,12 @@ export async function render(ctx) {
     <div class="card">
       ${workouts.length ? workouts.map((w) => `
         <div class="row" data-wo="${esc(w.id)}">
-          <span class="chip" style="width:38px;height:38px;padding:0;justify-content:center;border-radius:50%;font-size:16px">${kindGlyph(w.kind)}</span>
+          ${kindBadge(w.kind, { size: 38 })}
           <span class="grow">
             <div class="row-title">${esc(w.name)}</div>
             <div class="row-sub">${esc(daysLabel(w, order))} · ${esc(summaryOf(w))}</div>
           </span>
-          <button class="ex-menu" data-menu="${esc(w.id)}">&#8943;</button>
+          <button class="ex-menu" data-menu="${esc(w.id)}">${icon('more', 18)}</button>
         </div>`).join('')
         : '<div class="card-pad muted small">No workouts in this plan yet.</div>'}
     </div>

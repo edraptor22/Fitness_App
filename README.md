@@ -4,6 +4,8 @@ A workout tracker that costs nothing to run. Static files, no build step, no
 server, no account. It lives on GitHub Pages and stores everything in your
 phone's own database, so it works in a basement gym with no signal.
 
+- **Everything counts down to a date.** Set the event you're training for and
+  Today leads with days remaining, weeks of training left, and sessions banked.
 - **Plans** are weekly templates — Plan A might be 3 lifting days, 2 plyo days
   and mobility every day. Switch to Plan B and Today follows the new schedule.
 - **Per-set logging.** Every set is its own row, pre-filled with what you did
@@ -11,6 +13,9 @@ phone's own database, so it works in a basement gym with no signal.
 - **Last session is always on screen**, right under the exercise name.
 - **Anything can be added on the day**, whether the plan has it or not.
 - **Mobility-style workouts** are a single check-off with an optional video link.
+- **Daily weigh-in** with a goal weight, a trend line, and milestones you attach
+  your own rewards to — cross one and the app tells you what you've earned.
+- **A quote a day** on the home screen, drawn from your own list.
 
 ---
 
@@ -132,6 +137,18 @@ js/
   views/              one module per screen
 ```
 
+### Daily quotes
+
+Settings → **Daily quotes** takes a pasted list, one per line. Numbering and
+bullets are stripped, wrapping quotation marks are removed, and a trailing
+`— Author` is split out and shown underneath. Turn the card off entirely with
+the *Daily quote on Today* switch.
+
+The rotation is deterministic per date — the same quote all day — but the order
+interleaves authors, so you never get a run of the same person. Every quote
+appears once before any repeats, and the order is reshuffled each time the list
+is exhausted.
+
 ### Data model
 
 - **exercise** — a name plus `track` flags for `weight` / `reps` / `duration` /
@@ -141,6 +158,13 @@ js/
   list of exercises with target sets/reps or a single check-off.
 - **session** — what actually happened on a date. Sessions copy the exercise
   name at log time, so renaming or deleting an exercise never rewrites history.
+- **weight** — one row per day, keyed by the date, so logging twice replaces
+  rather than duplicates.
+- **goal** — start weight, target weight, and milestones (`weight`, `reward`,
+  `hitDate`). Saving a weigh-in checks every unhit milestone and marks the ones
+  it crossed, which is what triggers the reward screen.
+- **events** — the countdown targets. The soonest one that hasn't passed is the
+  one Today leads with.
 
 Sets are only counted as done when they're ticked, which is what keeps the
 "last session" line honest.

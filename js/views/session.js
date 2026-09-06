@@ -3,6 +3,7 @@
 
 import * as store from '../store.js';
 import { esc, on, sheet, toast, menuSheet, confirmSheet } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { pickExerciseSheet } from './today.js';
 import {
   fmtDate, fmtAgo, fmtNum, num, activeMetrics, METRIC_LABEL, metricStep, metricUnit,
@@ -187,12 +188,12 @@ function simpleBody(s) {
   return `
     <div class="card card-pad center">
       <button class="tick ${done ? 'on' : ''}" data-done-toggle
-        style="width:88px;height:88px;font-size:38px;margin:6px auto 12px">&#10003;</button>
+        style="width:88px;height:88px;margin:6px auto 12px">${icon("check", 40)}</button>
       <div style="font-weight:650;font-size:17px">${esc(s.name)}</div>
       <div class="small muted" style="margin-top:2px">${done ? 'Completed' : 'Tap to mark complete'}</div>
     </div>
 
-    ${s.link ? `<a class="btn block" href="${esc(s.link)}" target="_blank" rel="noopener">&#9654;&nbsp; Open the video</a>` : ''}
+    ${s.link ? `<a class="btn block" href="${esc(s.link)}" target="_blank" rel="noopener">${icon("play", 18)}&nbsp; Open the video</a>` : ''}
 
     <div class="card" style="margin-top:12px">
       <div class="field"><label>Minutes</label>
@@ -220,7 +221,7 @@ function exercisesBody(s, settings) {
       ${s.workoutId ? '<button class="chip" data-savetpl>Save to plan</button>' : ''}
     </div>` : ''}
 
-    ${cards || `<div class="empty"><span class="big">&#127947;</span>No exercises yet<div class="tiny" style="margin-top:6px">Add one below.</div></div>`}
+    ${cards || `<div class="empty"><span class="big">${icon("dumbbell", 34)}</span>No exercises yet<div class="tiny" style="margin-top:6px">Add one below.</div></div>`}
 
     <div class="btn-row">
       <button class="btn block" data-addex>+ Add exercise</button>
@@ -258,7 +259,7 @@ function exerciseCard(entry, i, s, settings) {
         ${settings.showLastSession ? `<div class="ex-last">${lastLine}</div>` : ''}
         ${entry.notes ? `<div class="tiny dim" style="margin-top:3px">${esc(entry.notes)}</div>` : ''}
       </div>
-      <button class="ex-menu" data-exmenu="${i}" aria-label="Exercise options">&#8943;</button>
+      <button class="ex-menu" data-exmenu="${i}" aria-label="Exercise options">${icon('more', 18)}</button>
     </div>
 
     <div class="set-head" style="grid-template-columns:${cols}">
@@ -279,13 +280,13 @@ function exerciseCard(entry, i, s, settings) {
               style="${compact ? 'border-radius:var(--radius-s);border-left:1px solid var(--line);border-right:1px solid var(--line)' : ''}">
             ${compact ? '' : `<button data-step="1" tabindex="-1">+</button>`}
           </div>`).join('')}
-        <button class="tick ${set.done ? 'on' : ''}" data-tick="${j}" data-entry="${i}" aria-label="Set ${j + 1} done">&#10003;</button>
+        <button class="tick ${set.done ? 'on' : ''}" data-tick="${j}" data-entry="${i}" aria-label="Set ${j + 1} done">${icon('check', 22)}</button>
       </div>`).join('')}
 
     <div class="set-foot">
       <button class="btn" data-addset="${i}">+ Set</button>
       ${entry.sets.length > 1 ? `<button class="btn" data-delset="${i}">&minus; Set</button>` : ''}
-      ${ex.link ? `<a class="btn" href="${esc(ex.link)}" target="_blank" rel="noopener">&#9654; Video</a>` : ''}
+      ${ex.link ? `<a class="btn" href="${esc(ex.link)}" target="_blank" rel="noopener">${icon("play", 16)} Video</a>` : ''}
     </div>
   </div>`;
 }

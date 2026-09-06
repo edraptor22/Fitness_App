@@ -2,6 +2,7 @@
 
 import * as store from '../store.js';
 import { esc, on, sheet, emptyState } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { KIND_LABEL, KIND_ORDER } from '../util.js';
 
 export async function render(ctx) {
@@ -26,11 +27,11 @@ export async function render(ctx) {
             <div class="row-title">${esc(e.name)}</div>
             <div class="row-sub tight tiny dim">${esc(trackLabel(e))}</div>
           </span>
-          <span class="chev">&#8250;</span>
+          <span class="chev">${icon('chevron', 18)}</span>
         </div>`).join('')}
       </div>`).join('')}
 
-    ${!hits.length ? emptyState('&#9776;', q ? 'No matches' : 'Your library is empty', 'Add an exercise below.') : ''}
+    ${!hits.length ? emptyState('book', q ? 'No matches' : 'Your library is empty', 'Add an exercise below.') : ''}
 
     <div class="btn-row"><button class="btn primary block" data-new>+ New exercise</button></div>`;
 

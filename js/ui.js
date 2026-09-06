@@ -1,6 +1,8 @@
 /* DOM helpers, bottom sheets, toasts. Views build HTML strings and then wire
    behaviour with delegated listeners — no framework, no build step. */
 
+import { icon } from './icons.js';
+
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -157,10 +159,12 @@ export function menuSheet(title, options) {
 export function switchRow(label, name, checked, sub = '') {
   return `<div class="field field-inline">
     <div class="grow">
-      <label>${esc(label)}</label>
+      <label for="sw_${esc(name)}">${esc(label)}</label>
       ${sub ? `<div class="tiny dim">${esc(sub)}</div>` : ''}
     </div>
-    <span class="switch"><input type="checkbox" name="${esc(name)}" ${checked ? 'checked' : ''}><span></span></span>
+    <label class="switch">
+      <input type="checkbox" id="sw_${esc(name)}" name="${esc(name)}" ${checked ? 'checked' : ''}><span></span>
+    </label>
   </div>`;
 }
 
@@ -201,7 +205,7 @@ export function readFields(root) {
   return out;
 }
 
-export function emptyState(icon, text, hint = '') {
-  return `<div class="empty"><span class="big">${icon}</span>${esc(text)}
+export function emptyState(iconName, text, hint = '') {
+  return `<div class="empty"><span class="big">${icon(iconName, 34)}</span>${esc(text)}
     ${hint ? `<div class="tiny" style="margin-top:6px">${esc(hint)}</div>` : ''}</div>`;
 }

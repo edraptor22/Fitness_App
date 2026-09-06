@@ -2,8 +2,9 @@
 
 import * as store from '../store.js';
 import { esc, on, menuSheet, confirmSheet, toast, emptyState } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { fmtDate, fmtNum, KIND_LABEL, KIND_ORDER, todayISO, num, pluralize } from '../util.js';
-import { kindGlyph } from './today.js';
+
 
 export async function render(ctx) {
   const filter = ctx.query.get('k') || 'all';
@@ -46,7 +47,7 @@ export async function render(ctx) {
       <div class="card">
         ${g.items.map((s) => sessionRow(s)).join('')}
       </div>`).join('')
-      : emptyState('&#9202;', 'Nothing logged yet', 'Finish a workout and it will show up here.')}
+      : emptyState('clock', 'Nothing logged yet', 'Finish a workout and it will show up here.')}
   `;
 
   function mount(root) {
@@ -97,13 +98,13 @@ function sessionRow(s) {
     if (vol > 0) sub += ` · ${comma(Math.round(vol))} ${settings.units}`;
   }
   return `<div class="row" data-open="${esc(s.id)}">
-    <span class="chip" style="width:38px;height:38px;padding:0;justify-content:center;border-radius:50%;font-size:15px">${kindGlyph(s.kind)}</span>
+    ${kindBadge(s.kind, { size: 38 })}
     <span class="grow">
       <div class="row-title">${esc(s.name)}</div>
       <div class="row-sub">${esc(sub)}</div>
     </span>
     <span class="tiny dim" style="text-align:right;white-space:nowrap">${esc(fmtDate(s.date, { weekday: false }))}</span>
-    <button class="ex-menu" data-menu="${esc(s.id)}">&#8943;</button>
+    <button class="ex-menu" data-menu="${esc(s.id)}">${icon('more', 18)}</button>
   </div>`;
 }
 

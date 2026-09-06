@@ -2,6 +2,7 @@
 
 import * as store from '../store.js';
 import { esc, on, toast, promptSheet, menuSheet, confirmSheet, emptyState } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { KIND_LABEL, KIND_ORDER } from '../util.js';
 
 export async function render(ctx) {
@@ -21,15 +22,15 @@ export async function render(ctx) {
           .filter(Boolean).join(' · ');
         return `<div class="row" data-plan="${esc(p.id)}">
           <button class="tick ${p.id === activeId ? 'on' : ''}" data-activate="${esc(p.id)}"
-            aria-label="Make active">&#10003;</button>
+            aria-label="Make active">${icon('check', 22)}</button>
           <span class="grow">
             <div class="row-title">${esc(p.name)}${p.id === activeId ? ' <span class="chip accent" style="margin-left:6px">Active</span>' : ''}</div>
             <div class="row-sub">${esc(counts || 'No workouts yet')}</div>
           </span>
-          <button class="ex-menu" data-menu="${esc(p.id)}">&#8943;</button>
+          <button class="ex-menu" data-menu="${esc(p.id)}">${icon('more', 18)}</button>
         </div>`;
       }).join('')}
-    </div>` : emptyState('&#9635;', 'No plans yet', 'A plan holds your weekly workouts.')}
+    </div>` : emptyState('layers', 'No plans yet', 'A plan holds your weekly workouts.')}
 
     <div class="btn-row"><button class="btn primary block" data-new>+ New plan</button></div>
 

@@ -2,8 +2,8 @@
    Everything is loaded once at boot; writes go to memory and IDB together. */
 
 import * as db from './db.js';
-import { uid, todayISO, weekDates, dowOf, num, bestSet, addDays } from './util.js';
-import { SEED } from './seed.js';
+import { uid, todayISO, weekDates, dowOf, num, bestSet, addDays, clamp, fromISO } from './util.js';
+import { SEED, SEED_QUOTES } from './seed.js';
 
 export const state = {
   settings: null,
@@ -11,6 +11,8 @@ export const state = {
   plans: new Map(),
   workouts: new Map(),
   sessions: new Map(),
+  weights: new Map(),   // keyed by date, one weigh-in per day
+  quotes: new Map(),
 };
 
 const listeners = new Set();
@@ -25,23 +27,36 @@ export const DEFAULT_SETTINGS = {
   activePlanId: null,
   showLastSession: true,
   seeded: false,
-  schemaVersion: 1,
+  schemaVersion: 2,
+
+  /* Countdown target(s). The soonest upcoming one is the hero on Today. */
+  events: [],           // [{ id, name, date, createdAt }]
+
+  /* Body-weight goal with reward milestones. */
+  goal: null,           // { startWeight, startDate, targetWeight, milestones: [] }
+
+  showQuotes: true,
 };
 
 /* ------------------------------------------------------------------ boot */
 
 export async function load() {
-  const [settings, exercises, plans, workouts, sessions] = await Promise.all(
-    ['settings', 'exercises', 'plans', 'workouts', 'sessions'].map(db.getAll));
+  const [settings, exercises, plans, workouts, sessions, weights, quotes] = await Promise.all(
+    ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes'].map(db.getAll));
 
   state.settings = { ...DEFAULT_SETTINGS, ...(settings[0] || {}) };
   fill(state.exercises, exercises);
   fill(state.plans, plans);
   fill(state.workouts, workouts);
   fill(state.sessions, sessions);
+  fill(state.weights, weights);
+  fill(state.quotes, quotes);
 
   if (!state.settings.seeded && exercises.length === 0) {
     await seedStarterData();
+  }
+  if (!state.quotes.size && !state.settings.quotesSeeded) {
+    await seedQuotes();
   }
   return state;
 }
@@ -62,6 +77,13 @@ async function seedStarterData() {
   fill(state.plans, plans);
   fill(state.workouts, workouts);
   await saveSettings({ seeded: true, activePlanId });
+}
+
+async function seedQuotes() {
+  const rows = SEED_QUOTES();
+  await db.putMany('quotes', rows);
+  fill(state.quotes, rows);
+  await saveSettings({ quotesSeeded: true });
 }
 
 /* ------------------------------------------------------------- settings */
@@ -422,18 +444,315 @@ export function streak() {
   return n;
 }
 
+/* ---------------------------------------------------------- body weight */
+
+export function weightOn(date) { return state.weights.get(date) || null; }
+
+/** Every weigh-in, oldest first. */
+export function allWeights() {
+  return [...state.weights.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function latestWeight() {
+  const all = allWeights();
+  return all.length ? all[all.length - 1] : null;
+}
+
+/**
+ * Record a weigh-in (one per day — logging twice replaces the day's value)
+ * and return any milestones it just crossed, so the UI can celebrate them.
+ */
+export async function logWeight(date, value, note = '') {
+  const row = { id: date, date, weight: num(value), note, loggedAt: new Date().toISOString() };
+  state.weights.set(date, row);
+  await db.put('weights', row);
+  const hit = await checkMilestones(row);
+  emit();
+  return { row, hit };
+}
+
+export async function deleteWeight(date) {
+  state.weights.delete(date);
+  await db.remove('weights', date);
+  emit();
+}
+
+/** Change per week over the trailing `days`, signed (negative = losing). */
+export function weightTrend(days = 28) {
+  const cutoff = addDays(todayISO(), -days);
+  const window = allWeights().filter((w) => w.date >= cutoff);
+  if (window.length < 2) return null;
+  const first = window[0];
+  const last = window[window.length - 1];
+  const span = (fromISODays(last.date) - fromISODays(first.date)) / 7;
+  if (span <= 0) return null;
+  return (last.weight - first.weight) / span;
+}
+
+const fromISODays = (iso) => Math.round(fromISO(iso).getTime() / 86400000);
+
+/* ------------------------------------------------------- weight goal */
+
+export function goal() { return state.settings.goal || null; }
+
+export function goalDirection(g = goal()) {
+  if (!g) return null;
+  return g.targetWeight < g.startWeight ? 'lose' : 'gain';
+}
+
+/** 0..1 progress from the starting weight toward the target. */
+export function goalProgress(g = goal()) {
+  if (!g) return 0;
+  const cur = latestWeight()?.weight;
+  if (cur === undefined) return 0;
+  const span = g.targetWeight - g.startWeight;
+  if (span === 0) return 1;
+  return clamp((cur - g.startWeight) / span, 0, 1);
+}
+
+export function remainingToGoal(g = goal()) {
+  const cur = latestWeight()?.weight;
+  if (!g || cur === undefined) return null;
+  return Math.abs(cur - g.targetWeight);
+}
+
+/** Milestones in the order you'll reach them, unhit ones first. */
+export function sortedMilestones(g = goal()) {
+  if (!g?.milestones?.length) return [];
+  const dir = goalDirection(g);
+  return [...g.milestones].sort((a, b) =>
+    dir === 'lose' ? b.weight - a.weight : a.weight - b.weight);
+}
+
+export function nextMilestone(g = goal()) {
+  return sortedMilestones(g).find((m) => !m.hitDate) || null;
+}
+
+/** Mark every milestone this weigh-in reached. Returns the newly hit ones. */
+async function checkMilestones(row) {
+  const g = goal();
+  if (!g?.milestones?.length) return [];
+  const dir = goalDirection(g);
+  const hit = [];
+  for (const m of g.milestones) {
+    if (m.hitDate) continue;
+    const reached = dir === 'lose' ? row.weight <= m.weight : row.weight >= m.weight;
+    if (reached) { m.hitDate = row.date; hit.push(m); }
+  }
+  if (hit.length) await saveSettings({ goal: { ...g } });
+  return hit;
+}
+
+export async function saveGoal(g) { return saveSettings({ goal: g }); }
+
+/** Build evenly spaced milestones between start and target. */
+export function generateMilestones(g, stepSize) {
+  const dir = g.targetWeight < g.startWeight ? -1 : 1;
+  const step = Math.abs(num(stepSize)) * dir;
+  if (!step) return [];
+  const out = [];
+  let w = g.startWeight + step;
+  const past = (v) => (dir < 0 ? v < g.targetWeight : v > g.targetWeight);
+  while (!past(w) && out.length < 40) {
+    out.push({ id: uid('ms'), weight: Math.round(w * 10) / 10, reward: '', hitDate: null });
+    w += step;
+  }
+  // Always finish on the target itself.
+  if (!out.some((m) => m.weight === g.targetWeight)) {
+    out.push({ id: uid('ms'), weight: g.targetWeight, reward: '', hitDate: null });
+  }
+  return out;
+}
+
+/* --------------------------------------------------------- target events */
+
+export function events() {
+  return [...(state.settings.events || [])].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** The next event that hasn't happened yet — the one Today counts down to. */
+export function nextEvent(from = todayISO()) {
+  return events().find((e) => e.date >= from) || null;
+}
+
+export function daysUntil(date, from = todayISO()) {
+  return fromISODays(date) - fromISODays(from);
+}
+
+export async function saveEvent(ev) {
+  const list = [...(state.settings.events || [])];
+  const i = list.findIndex((e) => e.id === ev.id);
+  if (i >= 0) list[i] = ev; else list.push(ev);
+  return saveSettings({ events: list });
+}
+
+export async function deleteEvent(id) {
+  return saveSettings({ events: (state.settings.events || []).filter((e) => e.id !== id) });
+}
+
+export function newEvent(patch = {}) {
+  return { id: uid('ev'), name: '', date: todayISO(), createdAt: todayISO(), ...patch };
+}
+
+/**
+ * How the training block is going: sessions done since the event was set,
+ * and how many the active plan still has room for before the date.
+ */
+export function eventProgress(ev) {
+  if (!ev) return null;
+  const total = daysUntil(ev.date, ev.createdAt || todayISO());
+  const gone = daysUntil(todayISO(), ev.createdAt || todayISO());
+  const left = daysUntil(ev.date);
+  const done = [...state.sessions.values()].filter(
+    (s) => s.status === 'done' && s.date >= (ev.createdAt || '0000-00-00') && s.date <= todayISO()).length;
+
+  // Count real training sessions only — daily check-offs would swamp the number.
+  const p = activePlan();
+  const perWeek = p
+    ? planWorkouts(p.id)
+        .filter((w) => (w.mode || 'exercises') !== 'simple')
+        .reduce((n, w) => n + (w.days?.length || 0), 0)
+    : 0;
+  const weeksLeft = Math.max(0, left / 7);
+
+  return {
+    daysLeft: left,
+    weeksLeft: Math.floor(weeksLeft),
+    pct: total > 0 ? clamp(gone / total, 0, 1) : (left <= 0 ? 1 : 0),
+    sessionsDone: done,
+    sessionsLeft: Math.round(perWeek * weeksLeft),
+    perWeek,
+  };
+}
+
+/* ---------------------------------------------------------------- quotes */
+
+export function allQuotes() {
+  return [...state.quotes.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/* Small deterministic PRNG so a given day always yields the same quote —
+   no stored state, but not the plain source order either. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededShuffle(arr, seed) {
+  const rand = mulberry32(seed);
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * One pass through every quote, ordered so authors interleave instead of
+ * running in blocks — you get Goggins, then Seneca, then Jocko, not eighteen
+ * days of Marcus Aurelius. Reshuffled each time the list is exhausted.
+ */
+function rotation(cycle, list) {
+  const groups = new Map();
+  for (const q of list) {
+    const key = q.author || ' ';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(q);
+  }
+
+  const keys = seededShuffle([...groups.keys()], cycle * 7919 + 13);
+  const buckets = keys.map((k, i) => seededShuffle(groups.get(k), cycle * 104729 + i * 31 + 7));
+
+  const out = [];
+  while (buckets.some((b) => b.length)) {
+    const live = buckets.filter((b) => b.length).length;
+    const prev = out.length ? out[out.length - 1].author : null;
+    let pick = -1;
+    for (let i = 0; i < buckets.length; i++) {
+      if (!buckets[i].length) continue;
+      // Never twice from the same author in a row, unless they're all that's left.
+      if (live > 1 && (buckets[i][0].author || ' ') === (prev || ' ')) continue;
+      // Drain the biggest bucket first so heavy authors stay spread out.
+      if (pick < 0 || buckets[i].length > buckets[pick].length) pick = i;
+    }
+    if (pick < 0) pick = buckets.findIndex((b) => b.length);
+    out.push(buckets[pick].shift());
+  }
+  return out;
+}
+
+let _rotCache = { key: null, order: null };
+
+/** Stable for the whole day; every quote appears once before any repeats. */
+export function quoteForDate(date = todayISO()) {
+  const list = allQuotes();
+  if (!list.length) return null;
+
+  const day = Math.abs(fromISODays(date));
+  const n = list.length;
+  const cycle = Math.floor(day / n);
+
+  const key = `${cycle}:${n}:${list[0].id}`;
+  if (_rotCache.key !== key) _rotCache = { key, order: rotation(cycle, list) };
+
+  return _rotCache.order[day % n];
+}
+
+export async function replaceQuotes(rows) {
+  for (const id of state.quotes.keys()) await db.remove('quotes', id);
+  state.quotes.clear();
+  const built = rows.map((r, i) => ({ id: uid('q'), order: i, ...r }));
+  await db.putMany('quotes', built);
+  fill(state.quotes, built);
+  _rotCache = { key: null, order: null };
+  await saveSettings({ quotesSeeded: true });
+  emit();
+  return built;
+}
+
+/** Parse pasted text: one quote per line, optional "— Author" suffix. */
+export function parseQuotes(text) {
+  return text.split('\n')
+    .map((l) => l.trim())
+    // Strip list markers so a numbered or bulleted list pastes straight in.
+    .map((l) => l.replace(/^(?:\d+\s*[.)\]]|[-*•·–—])\s+/, '').trim())
+    .filter(Boolean)
+    .map((line) => {
+      // "Quote text — Author", also accepting –, --, or a spaced hyphen.
+      const m = line.match(/^(.*\S)\s+(?:—|–|--|-)\s+(.+)$/);
+      if (m && m[2].trim().length <= 60) return { text: unquote(m[1]), author: unquote(m[2]) };
+      return { text: unquote(line), author: '' };
+    });
+}
+
+/** Drop wrapping quotation marks — straight or curly — but keep nested ones. */
+function unquote(s) {
+  return String(s).trim()
+    .replace(/^["“”'‘’](.*)["“”'‘’]$/s, '$1')   // a matched pair around the whole thing
+    .replace(/^["“”]+|["“”]+$/g, '')            // any stray leftover at either end
+    .trim();
+}
+
 /* ------------------------------------------------------- export / import */
 
 export async function exportData() {
   return {
     format: 'liftlog',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     settings: state.settings,
     exercises: [...state.exercises.values()],
     plans: [...state.plans.values()],
     workouts: [...state.workouts.values()],
     sessions: [...state.sessions.values()],
+    weights: [...state.weights.values()],
+    quotes: [...state.quotes.values()],
   };
 }
 
@@ -448,6 +767,8 @@ export async function importData(data, { replace = true } = {}) {
     db.putMany('plans', data.plans || []),
     db.putMany('workouts', data.workouts || []),
     db.putMany('sessions', data.sessions || []),
+    db.putMany('weights', data.weights || []),
+    db.putMany('quotes', data.quotes || []),
   ]);
   await load();
   emit();
@@ -458,5 +779,6 @@ export async function wipe() {
   state.settings = { ...DEFAULT_SETTINGS };
   state.exercises.clear(); state.plans.clear();
   state.workouts.clear(); state.sessions.clear();
+  state.weights.clear(); state.quotes.clear();
   emit();
 }

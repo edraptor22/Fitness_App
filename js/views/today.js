@@ -3,8 +3,10 @@
 
 import * as store from '../store.js';
 import { esc, on, sheet, toast, emptyState, menuSheet } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
+import { celebrate } from './goals.js';
 import {
-  todayISO, addDays, fmtDate, fmtNum, KIND_LABEL, KIND_ORDER, weekDates, dowOf, DOW_SHORT, pluralize,
+  todayISO, addDays, fmtDate, fmtAgo, fmtNum, KIND_LABEL, KIND_ORDER, weekDates, dowOf, DOW_SHORT, pluralize,
 } from '../util.js';
 
 export async function render(ctx) {
@@ -19,8 +21,10 @@ export async function render(ctx) {
   const extras = sessions.filter((x) => !x.workoutId || !scheduledIds.has(x.workoutId));
 
   const html = `
+    ${countdownStrip()}
+    ${quoteCard(date)}
     ${dateStrip(date, s.weekStartsOn)}
-    ${weekCard(progress, date)}
+    ${weighInRow(date)}
 
     <div class="section-title">${plan ? esc(plan.name) : 'No plan selected'} · ${esc(fmtDate(date))}</div>
     <div class="card">
@@ -37,8 +41,10 @@ export async function render(ctx) {
       <button class="btn primary" data-add>+ Add workout</button>
     </div>
 
+    ${weekCard(progress, date)}
+
     ${sessions.length === 0 && scheduled.length === 0
-      ? emptyState('&#128170;', 'Nothing here yet', 'Add a workout, or set up a plan in the Plans tab.')
+      ? emptyState('dumbbell', 'Nothing here yet', 'Add a workout, or set up a plan in the Plans tab.')
       : ''}
   `;
 
@@ -46,6 +52,13 @@ export async function render(ctx) {
     on(root, '[data-day]', 'click', (e, t) => ctx.go(`/today?d=${t.dataset.day}`));
     on(root, '[data-jump]', 'click', (e, t) => ctx.go(`/today?d=${t.dataset.jump}`));
     on(root, '[data-add]', 'click', () => addSheet(date, ctx));
+    on(root, '[data-goals]', 'click', () => ctx.go('/goals'));
+
+    // Weigh in without leaving Today.
+    on(root, '[data-weigh]', 'click', (e, t) => {
+      e.stopPropagation();
+      weighInSheet(t.dataset.weigh, ctx);
+    });
 
     // Whole-row tap: start, resume, or open a logged session.
     on(root, '[data-wo]', 'click', async (e, t) => {
@@ -102,6 +115,108 @@ export async function render(ctx) {
 
 /* --------------------------------------------------------------- pieces */
 
+/** Compact countdown to the next target date. The full view lives in Goals. */
+function countdownStrip() {
+  const ev = store.nextEvent();
+  if (!ev) return '';
+  const p = store.eventProgress(ev);
+  const days = Math.max(0, p.daysLeft);
+
+  return `
+    <div class="card countdown" data-goals>
+      <div class="countdown-main">
+        <div class="grow" style="min-width:0">
+          <div class="hero-label">Training for</div>
+          <div class="countdown-name">${esc(ev.name)}</div>
+          <div class="tiny dim" style="margin-top:2px">
+            ${esc(fmtDate(ev.date, { absolute: true }))}
+            ${p.weeksLeft > 0 ? ` · ${p.weeksLeft} ${p.weeksLeft === 1 ? 'week' : 'weeks'} of training` : ''}
+          </div>
+        </div>
+        <div class="countdown-num">
+          <b class="mono">${days}</b>
+          <span>${days === 1 ? 'day' : 'days'}</span>
+        </div>
+      </div>
+      <div class="meter" style="margin-top:10px"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
+    </div>`;
+}
+
+function quoteCard(date) {
+  if (!store.state.settings.showQuotes) return '';
+  const q = store.quoteForDate(date);
+  if (!q) return '';
+  return `<div class="quote">
+    <div>${esc(q.text)}${q.author ? `<div class="quote-by">${esc(q.author)}</div>` : ''}</div>
+  </div>`;
+}
+
+/** One-line weigh-in for the displayed day, with the next reward as context. */
+function weighInRow(date) {
+  const s = store.state.settings;
+  const entry = store.weightOn(date);
+  const g = store.goal();
+  const next = store.nextMilestone(g);
+
+  let sub;
+  if (entry) {
+    const prev = store.allWeights().filter((w) => w.date < date).pop();
+    const delta = prev ? Math.round((entry.weight - prev.weight) * 10) / 10 : null;
+    sub = delta === null || delta === 0
+      ? (g ? `${fmtNum(Math.round(store.remainingToGoal(g) * 10) / 10)} ${s.units} to goal` : 'Logged')
+      : `${delta > 0 ? '+' : ''}${fmtNum(delta)} ${s.units} since ${fmtAgo(prev.date)}`;
+  } else if (next) {
+    sub = next.reward
+      ? `Next: ${fmtNum(next.weight)} ${s.units} → ${next.reward}`
+      : `Next milestone ${fmtNum(next.weight)} ${s.units}`;
+  } else {
+    sub = 'Tap to log';
+  }
+
+  return `<div class="card"><div class="row" data-goals>
+    <button class="tick ${entry ? 'on' : ''}" data-weigh="${esc(date)}" aria-label="Log weight">${icon('check', 22)}</button>
+    <span class="grow">
+      <div class="row-title">${entry
+        ? `<span class="mono">${esc(fmtNum(entry.weight))} ${esc(s.units)}</span>`
+        : (date === todayISO() ? "Today's weight" : `Weight for ${esc(fmtDate(date))}`)}</div>
+      <div class="row-sub">${esc(sub)}</div>
+    </span>
+    <span class="chev">${icon('chevron', 18)}</span>
+  </div></div>`;
+}
+
+export function weighInSheet(date, ctx) {
+  const s = store.state.settings;
+  const entry = store.weightOn(date);
+  const latest = store.latestWeight();
+  sheet({
+    title: date === todayISO() ? "Today's weigh-in" : fmtDate(date, { absolute: true }),
+    body: `<div class="field"><label>Weight (${esc(s.units)})</label>
+      <input type="number" inputmode="decimal" step="0.1" data-wv
+        value="${esc(fmtNum(entry?.weight))}" placeholder="${esc(latest ? fmtNum(latest.weight) : '')}"></div>
+      ${entry ? `<div class="card-pad"><button class="btn danger block" data-wdel>Delete this weigh-in</button></div>` : ''}`,
+    confirm: 'Save',
+    onMount(b, close) {
+      setTimeout(() => b.querySelector('[data-wv]')?.focus(), 60);
+      on(b, '[data-wdel]', 'click', async () => {
+        await store.deleteWeight(date);
+        toast('Deleted');
+        close();
+        ctx.refresh();
+      });
+    },
+    onConfirm(b) {
+      const v = Number(b.querySelector('[data-wv]').value);
+      if (!v) return false;
+      store.logWeight(date, v).then(async ({ hit }) => {
+        await ctx.refresh();               // re-render first — it closes sheets
+        if (hit.length) celebrate(hit, s.units);
+        else toast('Weight logged');
+      });
+    },
+  });
+}
+
 function dateStrip(date, weekStartsOn) {
   const days = weekDates(date, weekStartsOn);
   const t = todayISO();
@@ -136,23 +251,19 @@ function weekCard(progress, date) {
     .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
   if (!rows.length) return '';
   const { volume } = store.weekSummary(date);
+
   return `
     <div class="section-title">This week</div>
     <div class="card card-pad">
-      ${rows.map((p) => {
-        const pct = p.target ? Math.min(100, (p.done / p.target) * 100) : 100;
-        const full = p.target && p.done >= p.target;
-        return `<div style="margin-bottom:10px">
-          <div style="display:flex;justify-content:space-between;font-size:13.5px">
-            <span style="font-weight:600">${esc(KIND_LABEL[p.kind] || p.kind)}</span>
-            <span class="mono ${full ? '' : 'muted'}" style="${full ? 'color:var(--good);font-weight:650' : ''}">
-              ${p.done}${p.target ? ` / ${p.target}` : ''}
-            </span>
-          </div>
-          <div class="meter"><i class="${full ? 'full' : ''}" style="width:${pct}%"></i></div>
-        </div>`;
-      }).join('')}
-      ${volume > 0 ? `<div class="tiny dim" style="margin-top:2px">Volume ${fmtNum(Math.round(volume)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} ${store.state.settings.units}</div>` : ''}
+      <div class="ring-row">
+        ${rows.map((p) => ring(p.target ? p.done / p.target : 1, {
+          value: p.target ? `${p.done}/${p.target}` : String(p.done),
+          label: KIND_LABEL[p.kind] || p.kind,
+          tone: p.target && p.done >= p.target ? 'good' : p.kind,
+        })).join('')}
+      </div>
+      ${volume > 0 ? `<div class="tiny dim center" style="margin-top:12px">
+        ${fmtNum(Math.round(volume)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} ${esc(store.state.settings.units)} moved this week</div>` : ''}
     </div>`;
 }
 
@@ -164,14 +275,15 @@ function workoutRow(w, sessions) {
 
   return `<div class="row" data-wo="${esc(w.id)}">
     ${simple
-      ? `<button class="tick ${done ? 'on' : ''}" data-tick="${esc(w.id)}" aria-label="Mark done">&#10003;</button>`
-      : `<span class="chip ${done ? 'done' : 'accent'}" style="width:40px;height:40px;padding:0;justify-content:center;border-radius:50%;font-size:16px">
-           ${done ? '&#10003;' : kindGlyph(w.kind)}</span>`}
+      ? `<button class="tick ${done ? 'on' : ''}" data-tick="${esc(w.id)}" aria-label="Mark done">${icon('check', 22)}</button>`
+      : kindBadge(w.kind, { done, size: 40 })}
     <span class="grow">
       <div class="row-title ${done && simple ? 'strike' : ''}">${esc(w.name)}</div>
       <div class="row-sub">${esc(summaryOf(w))}${active ? ' · in progress' : ''}</div>
     </span>
-    ${done ? '<span class="chip done">Done</span>' : active ? '<span class="chip accent">Resume</span>' : '<span class="chev">&#8250;</span>'}
+    ${done ? '<span class="chip done">Done</span>'
+      : active ? '<span class="chip accent">Resume</span>'
+      : `<span class="chev">${icon('chevron', 18)}</span>`}
   </div>`;
 }
 
@@ -181,19 +293,15 @@ function sessionRow(x) {
     ? (x.duration ? `${fmtNum(x.duration)} min` : KIND_LABEL[x.kind] || '')
     : `${pluralize(x.entries?.length || 0, 'exercise')} · ${pluralize(sets, 'set')}`;
   return `<div class="row" data-open="${esc(x.id)}">
-    <span class="chip ${x.status === 'done' ? 'done' : 'accent'}" style="width:40px;height:40px;padding:0;justify-content:center;border-radius:50%;font-size:16px">
-      ${x.status === 'done' ? '&#10003;' : kindGlyph(x.kind)}</span>
+    ${kindBadge(x.kind, { done: x.status === 'done', size: 40 })}
     <span class="grow">
       <div class="row-title">${esc(x.name)}</div>
       <div class="row-sub">${esc(sub)}</div>
     </span>
-    <button class="ex-menu" data-sess-menu="${esc(x.id)}">&#8943;</button>
+    <button class="ex-menu" data-sess-menu="${esc(x.id)}">${icon('more', 18)}</button>
   </div>`;
 }
 
-export function kindGlyph(kind) {
-  return { lift: '&#127947;', plyo: '&#9889;', mobility: '&#129496;', custom: '&#9917;' }[kind] || '&#9679;';
-}
 
 export function summaryOf(w) {
   if ((w.mode || 'exercises') === 'simple') {
@@ -216,8 +324,8 @@ function addSheet(date, ctx) {
     <div class="search"><input type="text" data-q placeholder="Search workouts &amp; exercises" autocapitalize="none" autocorrect="off"></div>
     <div data-results></div>
     <div class="card" style="margin:0 12px 12px">
-      <button class="row" data-quick="custom"><span class="grow row-title">Custom workout…</span><span class="chev">&#8250;</span></button>
-      <button class="row" data-quick="exercise"><span class="grow row-title">Single exercise…</span><span class="chev">&#8250;</span></button>
+      <button class="row" data-quick="custom"><span class="grow row-title">Custom workout…</span><span class="chev">${icon('chevron', 18)}</span></button>
+      <button class="row" data-quick="exercise"><span class="grow row-title">Single exercise…</span><span class="chev">${icon('chevron', 18)}</span></button>
     </div>`;
 
   sheet({
@@ -238,7 +346,7 @@ function addSheet(date, ctx) {
               ${ws.map((w) => `<button class="row" data-start="${esc(w.id)}">
                 <span class="grow"><div class="row-title">${esc(w.name)}</div>
                 <div class="row-sub">${esc(summaryOf(w))}</div></span>
-                <span class="chev">&#8250;</span></button>`).join('')}
+                <span class="chev">${icon('chevron', 18)}</span></button>`).join('')}
             </div>`);
         }
         if (q) {
@@ -249,7 +357,7 @@ function addSheet(date, ctx) {
                 ${exs.map((e) => `<button class="row" data-ex="${esc(e.id)}">
                   <span class="grow"><div class="row-title">${esc(e.name)}</div>
                   <div class="row-sub">${esc(KIND_LABEL[e.kind] || '')}</div></span>
-                  <span class="chev">&#8250;</span></button>`).join('')}
+                  <span class="chev">${icon('chevron', 18)}</span></button>`).join('')}
               </div>`);
           }
         }
@@ -339,7 +447,7 @@ export function pickExerciseSheet(onPick, { title = 'Choose an exercise' } = {})
             <div class="section-title" style="margin-left:16px">${KIND_LABEL[k]}</div>
             <div class="card" style="margin:0 12px 8px">
               ${groups[k].map((e) => `<button class="row" data-pick="${esc(e.id)}">
-                <span class="grow row-title">${esc(e.name)}</span><span class="chev">&#8250;</span></button>`).join('')}
+                <span class="grow row-title">${esc(e.name)}</span><span class="chev">${icon('chevron', 18)}</span></button>`).join('')}
             </div>`).join('')}
           ${!hits.length && !q ? '<div class="empty small">Your library is empty</div>' : ''}`;
       };

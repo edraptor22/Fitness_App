@@ -3,6 +3,7 @@
 
 import * as store from '../store.js';
 import { esc, on, toast, menuSheet, confirmSheet } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import { pickExerciseSheet } from './today.js';
 import {
   DOW_SHORT, DOW_NAME, dowOrder, KIND_LABEL, KIND_ORDER, todayISO, num, metricUnit,
@@ -181,6 +182,6 @@ function itemRow(item, i, settings) {
         style="width:54px;height:38px;text-align:center;font-size:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)">
         ${unit ? `<span class="tiny dim">${esc(unit)}</span>` : ''}` : ''}
     </span>
-    <button class="ex-menu" data-itemmenu="${i}">&#8943;</button>
+    <button class="ex-menu" data-itemmenu="${i}">${icon('more', 18)}</button>
   </div>`;
 }

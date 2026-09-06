@@ -2,6 +2,7 @@
 
 import * as store from '../store.js';
 import { esc, on, toast, confirmSheet, switchRow } from '../ui.js';
+import { icon, kindBadge, ring } from '../icons.js';
 import {
   KIND_LABEL, KIND_ORDER, fmtDate, fmtNum, fmtSet, bestSet, num, METRICS,
 } from '../util.js';
@@ -63,7 +64,7 @@ export async function render(ctx) {
         ${usedIn.map((w) => `<div class="row" data-wo="${esc(w.id)}">
           <span class="grow"><div class="row-title">${esc(w.name)}</div>
           <div class="row-sub">${esc(store.plan(w.planId)?.name || '')}</div></span>
-          <span class="chev">&#8250;</span></div>`).join('')}
+          <span class="chev">${icon('chevron', 18)}</span></div>`).join('')}
       </div>` : ''}
 
     <div class="section-title">History${history.length ? ` · ${history.length}` : ''}</div>

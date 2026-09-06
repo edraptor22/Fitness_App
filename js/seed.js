@@ -133,3 +133,109 @@ export function SEED() {
 
   return { exercises, plans, workouts, activePlanId: A.id };
 }
+
+/* The daily quote rotation. Settings → Daily quotes replaces the whole list. */
+export function SEED_QUOTES() {
+  return [
+    /* --- David Goggins --- */
+    ['Stay hard.', 'David Goggins'],
+    ['You are in danger of living a life so comfortable and soft, that you will die without ever realizing your true potential.', 'David Goggins'],
+    ['Motivation is crap.', 'David Goggins'],
+    ['Callous your mind.', 'David Goggins'],
+    ['Don’t stop when you’re tired. Stop when you’re done.', 'David Goggins'],
+    ['The most important conversations you’ll ever have are the ones you’ll have with yourself.', 'David Goggins'],
+    ['You have to build calluses on your brain just like you build calluses on your hands.', 'David Goggins'],
+    ['Be uncommon amongst uncommon.', 'David Goggins'],
+    ['Suffering is a test. That’s all it is.', 'David Goggins'],
+    ['When you think you’re done, you’re only at 40 percent.', 'David Goggins'],
+
+    /* --- Mark Divine --- */
+    ['Consistency is the omnipotent force behind change.', 'Mark Divine'],
+    ['Slow is smooth, smooth is fast.', 'Mark Divine'],
+    ['To live an uncommon life, one needs learn uncommon disciplines.', 'Mark Divine'],
+    ['Always meet your commitments.', 'Mark Divine'],
+    ['Two is one; one is none.', 'Mark Divine'],
+    ['Master yourself so you can serve humanity.', 'Mark Divine'],
+    ['Discipline is literally to be a “disciple” to something bigger than you.', 'Mark Divine'],
+
+    /* --- Marcus Aurelius --- */
+    ['You have power over your mind—not outside events. Realize this, and you will find strength.', 'Marcus Aurelius'],
+    ['The impediment to action advances action. What stands in the way becomes the way.', 'Marcus Aurelius'],
+    ['The soul becomes dyed with the colour of its thoughts.', 'Marcus Aurelius'],
+    ['It is not death that a man should fear, but he should fear never beginning to live.', 'Marcus Aurelius'],
+    ['Waste no more time arguing about what a good man should be. Be one.', 'Marcus Aurelius'],
+    ['If it is not right, do not do it; if it is not true, do not say it.', 'Marcus Aurelius'],
+    ['The happiness of your life depends upon the quality of your thoughts.', 'Marcus Aurelius'],
+    ['When you arise in the morning, think of what a privilege it is to be alive.', 'Marcus Aurelius'],
+    ['Accept whatever comes woven in the pattern of your destiny.', 'Marcus Aurelius'],
+    ['Do every act of your life as though it were the very last act of your life.', 'Marcus Aurelius'],
+    ['The best revenge is to be unlike him who performed the injury.', 'Marcus Aurelius'],
+    ['Confine yourself to the present.', 'Marcus Aurelius'],
+    ['Look well into thyself; there is a source of strength which will always spring up if thou wilt always look.', 'Marcus Aurelius'],
+    ['The universe is change: life is opinion.', 'Marcus Aurelius'],
+    ['Very little is needed to make a happy life; it is all within yourself.', 'Marcus Aurelius'],
+    ['Think of yourself as dead. You have lived your life. Now take what’s left and live it properly.', 'Marcus Aurelius'],
+    ['The only wealth you keep forever is the wealth you give away.', 'Marcus Aurelius'],
+
+    /* --- Seneca --- */
+    ['We suffer more often in imagination than in reality.', 'Seneca'],
+    ['Difficulties strengthen the mind, as labor does the body.', 'Seneca'],
+    ['Luck is what happens when preparation meets opportunity.', 'Seneca'],
+    ['He who is brave is free.', 'Seneca'],
+    ['It is not that we have a short time to live, but that we waste a lot of it.', 'Seneca'],
+    ['While we wait for life, life passes.', 'Seneca'],
+    ['Begin at once to live, and count each separate day as a separate life.', 'Seneca'],
+    ['If one does not know to which port one is sailing, no wind is favorable.', 'Seneca'],
+    ['No man was ever wise by chance.', 'Seneca'],
+    ['He who has great power should use it lightly.', 'Seneca'],
+    ['Sometimes even to live is an act of courage.', 'Seneca'],
+    ['As is a tale, so is life: not how long it is, but how good it is, is what matters.', 'Seneca'],
+    ['The mind that is anxious about future events is miserable.', 'Seneca'],
+    ['Luck never made a man wise.', 'Seneca'],
+
+    /* --- Epictetus --- */
+    ['It’s not what happens to you, but how you react to it that matters.', 'Epictetus'],
+    ['No man is free who is not master of himself.', 'Epictetus'],
+    ['First say to yourself what you would be; and then do what you have to do.', 'Epictetus'],
+    ['We have two ears and one mouth so that we can listen twice as much as we speak.', 'Epictetus'],
+    ['Don’t explain your philosophy. Embody it.', 'Epictetus'],
+    ['If you want to improve, be content to be thought foolish and stupid.', 'Epictetus'],
+    ['Freedom is the only worthy goal in life.', 'Epictetus'],
+    ['Make the best use of what is in your power, and take the rest as it occurs.', 'Epictetus'],
+    ['Circumstances don’t make the man, they only reveal him to himself.', 'Epictetus'],
+    ['No great thing is created suddenly.', 'Epictetus'],
+
+    /* --- Jocko Willink --- */
+    ['Discipline equals freedom.', 'Jocko Willink'],
+    ['Get after it.', 'Jocko Willink'],
+    ['Good.', 'Jocko Willink'],
+    ['Don’t count on motivation. Count on discipline.', 'Jocko Willink'],
+    ['Default aggressive.', 'Jocko Willink'],
+    ['Prioritize and execute.', 'Jocko Willink'],
+    ['Detach.', 'Jocko Willink'],
+    ['The enemy gets a vote.', 'Jocko Willink'],
+    ['Extreme ownership.', 'Jocko Willink'],
+    ['If you want to be tougher, be tougher.', 'Jocko Willink'],
+
+    /* --- Nietzsche --- */
+    ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
+    ['That which does not kill us makes us stronger.', 'Friedrich Nietzsche'],
+    ['Become who you are.', 'Friedrich Nietzsche'],
+    ['One must still have chaos in oneself to be able to give birth to a dancing star.', 'Friedrich Nietzsche'],
+    ['The secret of reaping the greatest fruitfulness and greatest enjoyment from life is to live dangerously.', 'Friedrich Nietzsche'],
+
+    /* --- Same vein, added --- */
+    ['Suffer the pain of discipline or suffer the pain of regret.', 'Jim Rohn'],
+    ['Hard choices, easy life. Easy choices, hard life.', 'Jerzy Gregorek'],
+    ['We are what we repeatedly do. Excellence, then, is not an act but a habit.', 'Will Durant'],
+    ['You do not rise to the level of your goals. You fall to the level of your systems.', 'James Clear'],
+    ['I fear not the man who has practiced 10,000 kicks once, but I fear the man who has practiced one kick 10,000 times.', 'Bruce Lee'],
+    ['The successful warrior is the average man, with laser-like focus.', 'Bruce Lee'],
+    ['Everybody has a plan until they get punched in the mouth.', 'Mike Tyson'],
+    ['Nothing diminishes anxiety faster than action.', 'Walter Anderson'],
+    ['Great moments are born from great opportunity.', 'Herb Brooks'],
+    ['You were born to be a player. You were meant to be here. This moment is yours.', 'Herb Brooks'],
+    ['You miss 100% of the shots you don’t take.', 'Wayne Gretzky'],
+    ['Skate to where the puck is going, not where it has been.', 'Wayne Gretzky'],
+  ].map(([text, author], i) => ({ id: uid('q'), order: i, text, author }));
+}
