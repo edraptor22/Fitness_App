@@ -85,12 +85,19 @@ everything on the device.
 
 ## 5. Working on it
 
-Open `index.html` through any local web server — ES modules and service workers
-won't load from `file://`:
+You can't just double-click `index.html` — ES modules and service workers are
+blocked on `file://`. Serve it instead (no dependencies needed):
 
 ```bash
-npx serve .           # or: python -m http.server 8000
+npm run serve         # → http://localhost:5173
 ```
+
+That also prints a `http://192.168.x.x:5173` address. Open it on your iPhone
+while both are on the same Wi-Fi and you get the real thing on the real device.
+Two limits on a LAN address: the service worker won't register (browsers only
+allow that on `https` or `localhost`), so there's no offline mode, and the URL
+dies when the computer sleeps. Fine for trying it out, not for daily use —
+that's what deploying is for.
 
 After you change anything, bump `CACHE` in `sw.js` (`liftlog-v1` → `liftlog-v2`)
 before pushing, or phones will keep serving the cached copy.

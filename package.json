@@ -5,7 +5,7 @@
   "description": "Offline-first workout tracker. The app itself needs no build step and no dependencies — this file exists only for the browser smoke test.",
   "scripts": {
     "test": "node tools/smoke-test.mjs",
-    "serve": "npx --yes serve ."
+    "serve": "node tools/serve.mjs"
   },
   "devDependencies": {
     "playwright": "^1.62.1"
