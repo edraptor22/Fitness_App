@@ -1,7 +1,7 @@
 /* Service worker: makes the app launch instantly and work with no signal.
    Bump CACHE when you deploy so phones pick up the new files. */
 
-const CACHE = 'liftlog-v2';
+const CACHE = 'liftlog-v3';
 
 const SHELL = [
   './',

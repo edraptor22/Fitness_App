@@ -273,6 +273,9 @@ a { color: var(--accent); text-decoration: none; }
 .row-title { font-weight: 550; }
 .row-sub { font-size: 13px; color: var(--text-2); margin-top: 1px; }
 .row-sub.tight { margin-top: 0; }
+/* Scheduled today, but you already did it earlier in the week. */
+.row.covered .row-title { color: var(--text-2); }
+.row.covered .badge { opacity: .8; }
 
 .muted { color: var(--text-2); }
 .dim   { color: var(--text-3); }

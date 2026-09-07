@@ -136,6 +136,19 @@ export async function render(ctx) {
 
     on(root, '[data-finish]', 'click', () => finish());
 
+    on(root, '[data-delsession]', 'click', async () => {
+      const ok = await confirmSheet({
+        title: `Delete ${s.name}?`,
+        message: s.status === 'done'
+          ? 'This removes it from History and from your weekly counts. The workout stays in your plan.'
+          : 'This discards what you logged here. The workout stays in your plan.',
+      });
+      if (!ok) return;
+      await store.deleteSession(s.id);
+      toast('Deleted');
+      ctx.go(`/today?d=${s.date}`);
+    });
+
     function cellRef(input) {
       const cell = input.closest('[data-cell]');
       return {
@@ -204,6 +217,10 @@ function simpleBody(s) {
 
     <div class="btn-row">
       <button class="btn ${done ? '' : 'primary'}" data-finish>${done ? 'Reopen' : 'Finish'}</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn danger block" data-delsession>Delete this session</button>
     </div>`;
 }
 
@@ -235,6 +252,10 @@ function exercisesBody(s, settings) {
     <div class="btn-row">
       <button class="btn ${s.status === 'done' ? '' : 'primary'} block" data-finish>
         ${s.status === 'done' ? 'Reopen workout' : 'Finish workout'}</button>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn danger block" data-delsession>Delete this session</button>
     </div>`;
 }
 

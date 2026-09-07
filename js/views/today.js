@@ -2,11 +2,11 @@
    what's already logged, and a fast way to add anything extra. */
 
 import * as store from '../store.js';
-import { esc, on, sheet, toast, emptyState, menuSheet } from '../ui.js';
+import { esc, on, sheet, toast, emptyState, menuSheet, confirmSheet } from '../ui.js';
 import { icon, kindBadge, ring } from '../icons.js';
 import { celebrate } from './goals.js';
 import {
-  todayISO, addDays, fmtDate, fmtAgo, fmtNum, KIND_LABEL, KIND_ORDER, weekDates, dowOf, DOW_SHORT, pluralize,
+  todayISO, addDays, fmtDate, fmtAgo, fmtNum, KIND_LABEL, KIND_ORDER, weekDates, dowOf, DOW_SHORT, DOW_NAME, pluralize,
 } from '../util.js';
 
 export async function render(ctx) {
@@ -29,7 +29,7 @@ export async function render(ctx) {
     <div class="section-title">${plan ? esc(plan.name) : 'No plan selected'} · ${esc(fmtDate(date))}</div>
     <div class="card">
       ${scheduled.length
-        ? scheduled.map((w) => workoutRow(w, sessions)).join('')
+        ? scheduled.map((w) => workoutRow(w, sessions, date)).join('')
         : `<div class="card-pad muted small">Nothing scheduled${plan ? '' : ' — pick a plan in the Plans tab'}. Rest day, or add something below.</div>`}
     </div>
 
@@ -62,15 +62,64 @@ export async function render(ctx) {
 
     // Whole-row tap: start, resume, or open a logged session.
     on(root, '[data-wo]', 'click', async (e, t) => {
-      if (e.target.closest('[data-tick]')) return;
+      if (e.target.closest('[data-tick]') || e.target.closest('[data-womenu]')) return;
       const w = store.workout(t.dataset.wo);
       const existing = sessions.find((x) => x.workoutId === w.id);
       if (existing) return ctx.go(`/session/${existing.id}`);
+
+      // Weekly quota already met — don't silently duplicate it.
+      const earlier = store.workoutCoveredBy(w, date);
+      if (earlier.length) return coveredSheet(w, earlier, date, ctx);
+
       const created = await store.startSession({ workoutTemplate: w, date });
       ctx.go(`/session/${created.id}`);
     });
 
-    on(root, '[data-open]', 'click', (e, t) => ctx.go(`/session/${t.dataset.open}`));
+    on(root, '[data-womenu]', 'click', async (e, t) => {
+      e.stopPropagation();
+      const w = store.workout(t.dataset.womenu);
+      const existing = sessions.find((x) => x.workoutId === w.id);
+      const earlier = store.workoutDoneInWeek(w.id, date).filter((x) => x.date !== date);
+
+      const opts = [];
+      if (existing) opts.push({ label: existing.status === 'done' ? 'Open this session' : 'Resume', value: 'open' });
+      if (earlier.length) {
+        const last = earlier[earlier.length - 1];
+        opts.push({ label: `View ${DOW_NAME[dowOf(last.date)]}'s session`, value: 'earlier' });
+      }
+      if (!existing) opts.push({ label: earlier.length ? 'Do it again today' : 'Start it now', value: 'start' });
+      opts.push({ label: 'Do a different workout instead…', value: 'swap' });
+      opts.push({ label: 'Edit this workout', value: 'edit' });
+      if (existing) opts.push({ label: 'Remove from today', value: 'del', danger: true });
+
+      const choice = await menuSheet(w.name, opts);
+      if (!choice) return;
+      if (choice === 'open') return ctx.go(`/session/${existing.id}`);
+      if (choice === 'earlier') return ctx.go(`/session/${earlier[earlier.length - 1].id}`);
+      if (choice === 'start') {
+        const created = await store.startSession({ workoutTemplate: w, date });
+        return ctx.go(`/session/${created.id}`);
+      }
+      if (choice === 'swap') return addSheet(date, ctx);
+      if (choice === 'edit') return ctx.go(`/workout/${w.id}`);
+      if (choice === 'del') {
+        const ok = await confirmSheet({
+          title: `Remove ${w.name}?`,
+          message: existing.status === 'done'
+            ? 'This deletes the logged session. The workout stays in your plan.'
+            : 'This discards what you started. The workout stays in your plan.',
+          confirm: 'Remove',
+        });
+        if (ok) { await store.deleteSession(existing.id); toast('Removed'); ctx.refresh(); }
+      }
+    });
+
+    // The menu button sits inside the row, and both listeners live on the same
+    // root — so this has to bail out itself; stopPropagation wouldn't help.
+    on(root, '[data-open]', 'click', (e, t) => {
+      if (e.target.closest('[data-sess-menu]')) return;
+      ctx.go(`/session/${t.dataset.open}`);
+    });
 
     // One-tap complete for checkbox-style workouts (mobility, walks, …).
     on(root, '[data-tick]', 'click', async (e, t) => {
@@ -267,23 +316,33 @@ function weekCard(progress, date) {
     </div>`;
 }
 
-function workoutRow(w, sessions) {
+function workoutRow(w, sessions, date) {
   const sess = sessions.find((x) => x.workoutId === w.id);
   const done = sess?.status === 'done';
   const active = sess?.status === 'active';
   const simple = (w.mode || 'exercises') === 'simple';
 
-  return `<div class="row" data-wo="${esc(w.id)}">
+  // Already satisfied its weekly quota on other days? (A daily habit never is.)
+  const earlier = done ? [] : store.workoutCoveredBy(w, date);
+  const covered = earlier.length > 0;
+  const when = covered ? DOW_NAME[dowOf(earlier[earlier.length - 1].date)] : '';
+
+  const sub = covered
+    ? `Already done ${when}`
+    : `${summaryOf(w)}${active ? ' · in progress' : ''}`;
+
+  return `<div class="row ${covered ? 'covered' : ''}" data-wo="${esc(w.id)}">
     ${simple
       ? `<button class="tick ${done ? 'on' : ''}" data-tick="${esc(w.id)}" aria-label="Mark done">${icon('check', 22)}</button>`
-      : kindBadge(w.kind, { done, size: 40 })}
+      : kindBadge(w.kind, { done: done || covered, size: 40 })}
     <span class="grow">
-      <div class="row-title ${done && simple ? 'strike' : ''}">${esc(w.name)}</div>
-      <div class="row-sub">${esc(summaryOf(w))}${active ? ' · in progress' : ''}</div>
+      <div class="row-title ${(done && simple) || covered ? 'strike' : ''}">${esc(w.name)}</div>
+      <div class="row-sub">${esc(sub)}</div>
     </span>
     ${done ? '<span class="chip done">Done</span>'
-      : active ? '<span class="chip accent">Resume</span>'
-      : `<span class="chev">${icon('chevron', 18)}</span>`}
+      : covered ? `<span class="chip done">${esc(when.slice(0, 3))}</span>`
+      : active ? '<span class="chip accent">Resume</span>' : ''}
+    <button class="ex-menu" data-womenu="${esc(w.id)}" aria-label="Workout options">${icon('more', 18)}</button>
   </div>`;
 }
 
@@ -302,6 +361,44 @@ function sessionRow(x) {
   </div>`;
 }
 
+
+/** Tapping a workout you already did this week: view, repeat, or swap it out. */
+function coveredSheet(w, earlier, date, ctx) {
+  const last = earlier[earlier.length - 1];
+  const day = DOW_NAME[dowOf(last.date)];
+  sheet({
+    title: w.name,
+    body: `
+      <div class="card-pad center">
+        <div style="color:var(--good)">${icon('check', 30)}</div>
+        <div style="font-weight:650;margin-top:4px">Already done ${esc(day)}</div>
+        <div class="small muted" style="margin-top:2px">
+          ${esc(fmtDate(last.date, { absolute: true }))}${earlier.length > 1 ? ` · ${earlier.length}× this week` : ''}
+        </div>
+      </div>
+      <div class="card" style="margin:0 12px 8px">
+        <button class="row" data-c="earlier">
+          <span class="grow row-title">View ${esc(day)}'s session</span>
+          <span class="chev">${icon('chevron', 18)}</span></button>
+        <button class="row" data-c="swap">
+          <span class="grow row-title">Do a different workout instead</span>
+          <span class="chev">${icon('chevron', 18)}</span></button>
+        <button class="row" data-c="again">
+          <span class="grow row-title">Do it again today</span>
+          <span class="chev">${icon('chevron', 18)}</span></button>
+      </div>`,
+    onMount(b, close) {
+      on(b, '[data-c]', 'click', async (e, t) => {
+        close();
+        const c = t.dataset.c;
+        if (c === 'earlier') return ctx.go(`/session/${last.id}`);
+        if (c === 'swap') return addSheet(date, ctx);
+        const created = await store.startSession({ workoutTemplate: w, date });
+        ctx.go(`/session/${created.id}`);
+      });
+    },
+  });
+}
 
 export function summaryOf(w) {
   if ((w.mode || 'exercises') === 'simple') {

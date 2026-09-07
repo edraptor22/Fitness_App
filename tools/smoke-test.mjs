@@ -287,6 +287,116 @@ await step('replace the quote list from pasted text', async () => {
   if (list[0] !== 'Stay hard.|David Goggins') throw new Error('bad parse: ' + list[0]);
 });
 
+/* -------------------------------------- deleting sessions, week awareness */
+
+await step('the … menu on an "Also logged" row opens instead of navigating', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await startWorkout('Upper Body');           // not scheduled today -> lands in Also logged
+  await page.locator('[data-finish]').last().click();
+  await page.waitForTimeout(400);
+  if (await page.locator('[data-sheet-ok]').count()) await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(600);
+
+  const menu = page.locator('[data-sess-menu]').first();
+  if (!(await menu.count())) throw new Error('no Also-logged row to test');
+  await menu.click();
+  await page.waitForTimeout(400);
+  if (!(await page.locator('.sheet').count())) throw new Error('menu did not open — row swallowed the tap');
+  if (/session/.test(page.url())) throw new Error('navigated to the session instead of opening the menu');
+});
+
+await step('delete an "Also logged" session from that menu', async () => {
+  const before = await page.locator('[data-sess-menu]').count();
+  await page.locator('.sheet [data-val="del"]').click();
+  await page.waitForTimeout(600);
+  const after = await page.locator('[data-sess-menu]').count();
+  if (after >= before) throw new Error(`row not removed (${before} -> ${after})`);
+});
+
+await step('a session can be deleted from inside itself', async () => {
+  await startWorkout('Upper Body');
+  await page.locator('[data-delsession]').click();
+  await page.waitForSelector('[data-sheet-ok]');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(700);
+  if (/\/session\//.test(page.url())) throw new Error('still on the session screen');
+  const rows = await page.locator('[data-sess-menu]').count();
+  if (rows !== 0) throw new Error('session survived deletion');
+});
+
+await step('a workout done early shows as covered on its scheduled day', async () => {
+  // Find the day "Full Body" is scheduled, then do it the day before.
+  const info = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const w = [...s.state.workouts.values()].find((x) => x.name === 'Full Body' && x.planId === s.state.settings.activePlanId);
+    return { id: w.id, days: w.days };
+  });
+  const target = await page.evaluate((days) => {
+    const d = new Date();
+    for (let i = 1; i <= 7; i++) {
+      const t = new Date(d); t.setDate(d.getDate() + i);
+      if (days.includes(t.getDay())) {
+        const p = (n) => String(n).padStart(2, '0');
+        const iso = (x) => `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+        const prev = new Date(t); prev.setDate(t.getDate() - 1);
+        return { scheduled: iso(t), early: iso(prev) };
+      }
+    }
+  }, info.days);
+
+  // Log it a day early.
+  await page.goto(`http://localhost:8765/index.html#/today?d=${target.early}`);
+  await page.waitForTimeout(600);
+  await startWorkout('Full Body');
+  await page.locator('[data-finish]').last().click();
+  await page.waitForTimeout(400);
+  if (await page.locator('[data-sheet-ok]').count()) await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(600);
+
+  // Now look at the day it was actually scheduled.
+  await page.goto(`http://localhost:8765/index.html#/today?d=${target.scheduled}`);
+  await page.waitForTimeout(700);
+  const row = page.locator(`[data-wo="${info.id}"]`);
+  if (!(await row.count())) throw new Error('Full Body not scheduled on the day we expected');
+  if (!(await row.evaluate((el) => el.classList.contains('covered')))) {
+    throw new Error('row not marked covered: ' + (await row.textContent()).replace(/\s+/g, ' ').trim());
+  }
+  const txt = (await row.textContent()).replace(/\s+/g, ' ').trim();
+  if (!/Already done/.test(txt)) throw new Error('no "already done" note: ' + txt);
+  console.log('     ' + txt);
+
+  // A daily habit is due every day — one earlier tick must not cover it.
+  const daily = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const w = [...s.state.workouts.values()]
+      .find((x) => x.planId === s.state.settings.activePlanId && (x.days || []).length === 7);
+    return w ? w.id : null;
+  });
+  if (daily) {
+    const row = page.locator(`[data-wo="${daily}"]`);
+    if (await row.evaluate((el) => el.classList.contains('covered'))) {
+      throw new Error('a 7×/week habit was wrongly marked covered by one earlier day');
+    }
+  }
+  await page.screenshot({ path: `${SHOTS}/15-covered.png` });
+});
+
+await step('tapping a covered workout offers view / swap / repeat', async () => {
+  const info = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const w = [...s.state.workouts.values()].find((x) => x.name === 'Full Body' && x.planId === s.state.settings.activePlanId);
+    return w.id;
+  });
+  await page.locator(`[data-wo="${info}"]`).click();
+  await page.waitForTimeout(500);
+  const body = (await page.locator('.sheet-body').textContent()).replace(/\s+/g, ' ');
+  for (const want of ['Already done', 'View', 'different workout', 'again today']) {
+    if (!body.includes(want)) throw new Error(`sheet missing "${want}": ${body}`);
+  }
+  if (/\/session\//.test(page.url())) throw new Error('started a duplicate session instead of asking');
+});
+
 await step('export produces valid json', async () => {
   const json = await page.evaluate(async () => JSON.stringify(await window.LiftLog.store.exportData()).length);
   if (json < 1000) throw new Error('export looks empty: ' + json);

@@ -391,6 +391,31 @@ export function scheduledFor(date) {
 }
 
 /**
+ * Completed sessions for one workout template inside the week containing
+ * `date`. Lets Today say "already done Tuesday" when you train a day early.
+ */
+export function workoutDoneInWeek(workoutId, date) {
+  const week = new Set(weekDates(date, state.settings.weekStartsOn));
+  return [...state.sessions.values()]
+    .filter((s) => s.workoutId === workoutId && s.status === 'done' && week.has(s.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Sessions that already satisfy this workout's weekly quota, done on other
+ * days of the same week — or [] if it's still due today.
+ *
+ * The quota is how many days a week the workout is scheduled, so a Friday
+ * "Full Body" (1×/week) counts as covered once you've done it Thursday, while
+ * a daily mobility habit (7×/week) is still due every day regardless.
+ */
+export function workoutCoveredBy(w, date) {
+  const earlier = workoutDoneInWeek(w.id, date).filter((s) => s.date !== date);
+  const quota = w.days?.length || 1;
+  return earlier.length >= quota ? earlier : [];
+}
+
+/**
  * Weekly counts by kind for the active plan:
  * [{ kind, target, done }]  — target from the plan's schedule, done from
  * completed sessions in the week (ad-hoc sessions count too).
