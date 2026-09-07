@@ -5,6 +5,7 @@ import * as store from '../store.js';
 import { esc, on, sheet, toast, menuSheet, confirmSheet, emptyState } from '../ui.js';
 import { icon, kindBadge, ring } from '../icons.js';
 import { fmtDate, fmtNum, todayISO, num, uid, clamp } from '../util.js';
+import { dailyCard, mountDaily } from './eating.js';
 
 export async function render(ctx) {
   const settings = store.state.settings;
@@ -158,6 +159,8 @@ export async function render(ctx) {
       if (choice === 'del') { await store.deleteEvent(ev.id); toast('Removed'); ctx.refresh(); }
     });
 
+    mountDaily(root, todayISO(), ctx);
+
     on(root, '[data-tab]', 'click', (e, t) =>
       ctx.go(t.dataset.tab === 'nutrition' ? '/goals?tab=nutrition' : '/goals'));
 
@@ -237,12 +240,17 @@ export async function render(ctx) {
 
 function nutritionPanel() {
   const habits = store.allHabits();
+  const today = dailyCard(todayISO(), { heading: false });
   const win = store.nutritionWindow();
   const triggers = store.triggerCounts();
   const pct = win.total ? win.onPlan / win.total : 0;
   const worst = triggers[0];
 
   return `
+    <div class="section-title">Today</div>
+    ${today || '<div class="card card-pad muted small">Add a habit below to start ticking days off.</div>'}
+
+    <div class="section-title">Last 30 days at a glance</div>
     <div class="card card-pad">
       <div class="ring-row">
         ${ring(pct, { value: String(win.onPlan), label: 'on plan', tone: 'good' })}
@@ -285,7 +293,7 @@ function nutritionPanel() {
           Tag a rough day on Today and the pattern shows up here after a few weeks.
         </div>`}
 
-    <div class="section-title">Daily non-negotiables</div>
+    <div class="section-title">Edit your non-negotiables</div>
     <div class="card">
       ${habits.length ? habits.map((h) => `
         <div class="row" data-habitrow="${esc(h.id)}">

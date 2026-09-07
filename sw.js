@@ -1,7 +1,7 @@
 /* Service worker: makes the app launch instantly and work with no signal.
    Bump CACHE when you deploy so phones pick up the new files. */
 
-const CACHE = 'liftlog-v4';
+const CACHE = 'liftlog-v5';
 
 const SHELL = [
   './',
@@ -16,6 +16,7 @@ const SHELL = [
   './js/util.js',
   './js/icons.js',
   './js/views/today.js',
+  './js/views/eating.js',
   './js/views/goals.js',
   './js/views/session.js',
   './js/views/plans.js',

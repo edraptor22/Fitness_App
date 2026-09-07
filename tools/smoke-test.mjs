@@ -466,6 +466,20 @@ await step('eating never quotes calorie maths or offsets training', async () => 
   }
 });
 
+await step('the eating controls exist on the Goals tab too', async () => {
+  await page.goto('http://localhost:8765/index.html#/goals?tab=nutrition');
+  await page.waitForTimeout(700);
+  const ticks = await page.locator('[data-habit]').count();
+  if (ticks !== 3) throw new Error('habit check-offs missing from Goals, got ' + ticks);
+  if (!(await page.locator('[data-rate="on"]').count())) throw new Error('rating buttons missing from Goals');
+  // and ticking from here must persist
+  await page.locator('[data-habit]').nth(1).click();
+  await page.waitForTimeout(500);
+  if (!(await page.locator('[data-habit]').nth(1).locator('.tick.on').count())) {
+    throw new Error('ticking from Goals did not stick');
+  }
+});
+
 await step('habits can be added and deleted', async () => {
   await page.locator('[data-addhabit]').click();
   await page.waitForSelector('.sheet [name=name]');
