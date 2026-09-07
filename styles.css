@@ -523,6 +523,55 @@ a { color: var(--accent); text-decoration: none; }
 .ms-reward { flex: 1; min-width: 0; }
 .ms-row.hit .ms-weight, .ms-row.hit .ms-reward { border-color: transparent; background: transparent; }
 
+/* ------------------------------------------------------ eating & habits */
+
+.hb-row { min-height: 48px; }
+
+.rate-block { padding: 12px 14px 13px; border-top: 1px solid var(--line-soft); }
+.rate-row { display: flex; gap: 6px; }
+.rate {
+  flex: 1; min-height: 40px; padding: 0 4px;
+  border: 1px solid var(--line); border-radius: var(--radius-s);
+  background: var(--surface-2); color: var(--text-2);
+  font-size: 13px; font-weight: 600; line-height: 1.15;
+}
+.rate.on { color: var(--accent-ink); border-color: transparent; }
+.rate.on.tone-good   { background: var(--good); }
+.rate.on.tone-warn   { background: var(--warn); color: #fff; }
+.rate.on.tone-danger { background: var(--danger); color: #fff; }
+
+/* The message that matters more than any of the tracking. */
+.reset-note {
+  margin: 4px 12px 10px;
+  padding: 13px 15px;
+  border-left: 3px solid var(--good);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: var(--good-soft);
+  font-size: 14px; line-height: 1.5; color: var(--text-2);
+}
+.reset-title { font-weight: 700; color: var(--text); margin-bottom: 3px; }
+
+.trig-wrap { display: flex; flex-wrap: wrap; gap: 7px; padding: 4px 14px 12px; }
+.trig {
+  padding: 9px 13px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--text-2); font-size: 13.5px; font-weight: 550;
+}
+.trig.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+
+/* 30-day grid — one bad day costs a square, never the record. */
+.daygrid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 5px; }
+.dg { display: block; aspect-ratio: 1; border-radius: 4px; background: var(--chip); }
+.dg-on     { background: var(--good); }
+.dg-wobbly { background: var(--warn); }
+.dg-off    { background: var(--danger); }
+.dg-none   { background: var(--chip); }
+.daygrid-key {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 11px;
+}
+.daygrid-key span { display: inline-flex; align-items: center; gap: 5px; }
+.daygrid-key .dg { width: 9px; height: 9px; aspect-ratio: auto; border-radius: 2px; }
+
 /* --------------------------------------------------------------- sheet */
 
 .sheet-backdrop {

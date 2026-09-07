@@ -17,6 +17,8 @@ export async function render(ctx) {
   const latest = store.latestWeight();
   const trend = store.weightTrend();
 
+  const tab = ctx.query.get('tab') === 'nutrition' ? 'nutrition' : 'weight';
+
   const html = `
     ${next ? countdownCard(next, u) : `
       <div class="card card-pad center">
@@ -27,6 +29,12 @@ export async function render(ctx) {
         <button class="btn primary" data-addevent>Set a target date</button>
       </div>`}
 
+    <div class="pill-tabs">
+      <button class="${tab === 'weight' ? 'on' : ''}" data-tab="weight">Body</button>
+      <button class="${tab === 'nutrition' ? 'on' : ''}" data-tab="nutrition">Eating</button>
+    </div>
+
+    ${tab === 'nutrition' ? nutritionPanel(u) : `
     ${events.length ? `
       <div class="section-title">Target dates</div>
       <div class="card">
@@ -87,6 +95,7 @@ export async function render(ctx) {
       </div>
       <div class="btn-row"><button class="btn block" data-backfill>+ Log another day</button></div>`
       : emptyState('scale', 'No weigh-ins yet', 'Log one above and the trend builds from there.')}
+    `}
   `;
 
   function mount(root) {
@@ -149,6 +158,32 @@ export async function render(ctx) {
       if (choice === 'del') { await store.deleteEvent(ev.id); toast('Removed'); ctx.refresh(); }
     });
 
+    on(root, '[data-tab]', 'click', (e, t) =>
+      ctx.go(t.dataset.tab === 'nutrition' ? '/goals?tab=nutrition' : '/goals'));
+
+    /* ---- habits ---- */
+    on(root, '[data-addhabit]', 'click', () => habitSheet(store.newHabit(), ctx));
+    on(root, '[data-habitrow]', 'click', (e, t) => {
+      if (e.target.closest('[data-habitmenu]')) return;
+      habitSheet(store.state.habits.get(t.dataset.habitrow), ctx);
+    });
+    on(root, '[data-habitmenu]', 'click', async (e, t) => {
+      e.stopPropagation();
+      const h = store.state.habits.get(t.dataset.habitmenu);
+      const choice = await menuSheet(h.name, [
+        { label: 'Edit', value: 'edit' },
+        { label: 'Delete', value: 'del', danger: true },
+      ]);
+      if (choice === 'edit') return habitSheet(h, ctx);
+      if (choice === 'del') {
+        const ok = await confirmSheet({
+          title: `Delete "${h.name}"?`,
+          message: 'Days you already ticked keep their record.',
+        });
+        if (ok) { await store.deleteHabit(h.id); toast('Deleted'); ctx.refresh(); }
+      }
+    });
+
     /* ---- goal ---- */
     on(root, '[data-editgoal]', 'click', () => goalSheet(ctx, u));
 
@@ -196,6 +231,102 @@ export async function render(ctx) {
     html,
     mount,
   };
+}
+
+/* ------------------------------------------------------------- nutrition */
+
+function nutritionPanel() {
+  const habits = store.allHabits();
+  const win = store.nutritionWindow();
+  const triggers = store.triggerCounts();
+  const pct = win.total ? win.onPlan / win.total : 0;
+  const worst = triggers[0];
+
+  return `
+    <div class="card card-pad">
+      <div class="ring-row">
+        ${ring(pct, { value: String(win.onPlan), label: 'on plan', tone: 'good' })}
+        ${ring(win.total ? win.wobbly / win.total : 0, { value: String(win.wobbly), label: 'wobbly', tone: 'plyo' })}
+        ${ring(win.total ? win.off / win.total : 0, { value: String(win.off), label: 'off', tone: 'lift' })}
+      </div>
+      <div class="tiny dim center" style="margin-top:12px">Last ${win.total} days${
+        win.logged < win.total ? ` · ${win.total - win.logged} not rated` : ''}</div>
+    </div>
+
+    <div class="section-title">Last 30 days</div>
+    <div class="card card-pad">
+      <div class="daygrid">
+        ${win.days.map((d) => `<i class="dg dg-${d.rating || 'none'}" title="${esc(d.date)}"></i>`).join('')}
+      </div>
+      <div class="daygrid-key tiny dim">
+        <span><i class="dg dg-on"></i> on plan</span>
+        <span><i class="dg dg-wobbly"></i> wobbly</span>
+        <span><i class="dg dg-off"></i> off</span>
+        <span><i class="dg dg-none"></i> not rated</span>
+      </div>
+    </div>
+
+    ${triggers.length ? `
+      <div class="section-title">What derails it · last 6 weeks</div>
+      <div class="card card-pad">
+        ${triggers.slice(0, 6).map((t) => `
+          <div style="margin-bottom:9px">
+            <div style="display:flex;justify-content:space-between;font-size:13.5px">
+              <span style="font-weight:600">${esc(t.label)}</span>
+              <span class="mono muted">${t.count}</span>
+            </div>
+            <div class="meter"><i style="width:${(t.count / triggers[0].count * 100).toFixed(0)}%"></i></div>
+          </div>`).join('')}
+        ${worst && worst.count >= 3 ? `<div class="tiny dim" style="margin-top:2px">
+          <b>${esc(worst.label)}</b> is your most common one. That's the one worth
+          building a rule around, rather than relying on willpower in the moment.</div>` : ''}
+      </div>`
+      : `<div class="card card-pad tiny dim">
+          Tag a rough day on Today and the pattern shows up here after a few weeks.
+        </div>`}
+
+    <div class="section-title">Daily non-negotiables</div>
+    <div class="card">
+      ${habits.length ? habits.map((h) => `
+        <div class="row" data-habitrow="${esc(h.id)}">
+          <span class="grow">
+            <div class="row-title">${esc(h.name)}</div>
+            ${h.note ? `<div class="row-sub tight tiny dim">${esc(h.note)}</div>` : ''}
+          </span>
+          <button class="ex-menu" data-habitmenu="${esc(h.id)}">${icon('more', 18)}</button>
+        </div>`).join('')
+        : '<div class="card-pad muted small">No habits yet.</div>'}
+    </div>
+    <div class="btn-row"><button class="btn block" data-addhabit>+ Add a habit</button></div>
+
+    <div class="card card-pad tiny dim">
+      Nothing here is counted, and none of it is ever offset against training.
+      Workouts and eating are tracked separately on purpose.
+    </div>`;
+}
+
+function habitSheet(h, ctx) {
+  if (!h) return;
+  sheet({
+    title: h.name ? 'Edit habit' : 'New habit',
+    body: `
+      <div class="field"><label>The habit</label>
+        <input type="text" name="name" value="${esc(h.name)}"
+          placeholder="Kitchen closed after 6:30pm" autocapitalize="sentences"></div>
+      <div class="field"><label>Note (optional)</label>
+        <input type="text" name="note" value="${esc(h.note || '')}"
+          placeholder="What it actually means on a hard day" autocapitalize="sentences"></div>
+      <div class="card-pad tiny dim">Keep it a yes-or-no behaviour. Anything you'd
+        have to measure belongs in a different app.</div>`,
+    confirm: 'Save',
+    onMount(b) { setTimeout(() => b.querySelector('[name=name]')?.focus(), 60); },
+    onConfirm(b) {
+      const name = b.querySelector('[name=name]').value.trim();
+      if (!name) return false;
+      store.saveHabit({ ...h, name, note: b.querySelector('[name=note]').value.trim() })
+        .then(() => ctx.refresh());
+    },
+  });
 }
 
 /* ------------------------------------------------------------- countdown */

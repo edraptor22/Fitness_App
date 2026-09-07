@@ -3,8 +3,8 @@
    file only deals with reading everything once and writing single records. */
 
 const DB_NAME = 'liftlog';
-const DB_VERSION = 2;   // v2 added: weights, quotes
-export const STORES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes'];
+const DB_VERSION = 3;   // v2 added weights+quotes; v3 added habits+nutrition
+export const STORES = ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes', 'habits', 'nutrition'];
 
 let _db = null;
 

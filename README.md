@@ -16,6 +16,9 @@ phone's own database, so it works in a basement gym with no signal.
 - **Daily weigh-in** with a goal weight, a trend line, and milestones you attach
   your own rewards to — cross one and the app tells you what you've earned.
 - **A quote a day** on the home screen, drawn from your own list.
+- **Eating, without counting anything.** Daily non-negotiables you tick off, a
+  one-tap rating for how the day went, and a trigger tag on the rough ones so
+  the pattern becomes visible. No calories, no macros, no food logging.
 
 ---
 
@@ -148,6 +151,23 @@ The rotation is deterministic per date — the same quote all day — but the or
 interleaves authors, so you never get a run of the same person. Every quote
 appears once before any repeats, and the order is reshuffled each time the list
 is exhausted.
+
+### Eating
+
+Three deliberate constraints, because the failure mode this is built against is
+"go off the cliff, then try to train it off":
+
+- **Nothing is counted.** Habits are yes/no behaviours; the day gets one of
+  three ratings. There is no calorie or macro arithmetic anywhere in the app.
+- **Never offset against training.** Eating and workouts have separate rings and
+  separate history. The app will not compute calories burned, and rating a day
+  as rough says plainly that a make-up workout is the loop, not the fix.
+- **A rolling 30-day window, not a streak.** One bad day costs a single square.
+  All-or-nothing streaks invite writing off the rest of the week.
+
+Trigger tags on the rough days are the part that pays off: after a month or two,
+Goals → Eating ranks what actually derails it, which is far more actionable than
+knowing how much you ate.
 
 ### Data model
 

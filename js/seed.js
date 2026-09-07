@@ -134,6 +134,16 @@ export function SEED() {
   return { exercises, plans, workouts, activePlanId: A.id };
 }
 
+/* Daily non-negotiables. Behaviours, not quantities — nothing here is counted.
+   Editable and deletable from Goals → Nutrition. */
+export function SEED_HABITS() {
+  return [
+    ['Kitchen closed after 6:30pm', 'Nothing after the cut-off. Decide before you are hungry.'],
+    ['Creatine + multivitamin', 'Both, every day.'],
+    ['No mindless calories', 'Eat on purpose. Ask what your body actually needs.'],
+  ].map(([name, note], i) => ({ id: uid('hb'), name, note, order: i, active: true }));
+}
+
 /* The daily quote rotation. Settings → Daily quotes replaces the whole list. */
 export function SEED_QUOTES() {
   return [

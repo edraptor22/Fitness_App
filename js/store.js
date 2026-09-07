@@ -3,7 +3,7 @@
 
 import * as db from './db.js';
 import { uid, todayISO, weekDates, dowOf, num, bestSet, addDays, clamp, fromISO } from './util.js';
-import { SEED, SEED_QUOTES } from './seed.js';
+import { SEED, SEED_QUOTES, SEED_HABITS } from './seed.js';
 
 export const state = {
   settings: null,
@@ -13,6 +13,8 @@ export const state = {
   sessions: new Map(),
   weights: new Map(),   // keyed by date, one weigh-in per day
   quotes: new Map(),
+  habits: new Map(),    // daily non-negotiables
+  nutrition: new Map(), // keyed by date: which habits were ticked, how the day went
 };
 
 const listeners = new Set();
@@ -41,8 +43,8 @@ export const DEFAULT_SETTINGS = {
 /* ------------------------------------------------------------------ boot */
 
 export async function load() {
-  const [settings, exercises, plans, workouts, sessions, weights, quotes] = await Promise.all(
-    ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes'].map(db.getAll));
+  const [settings, exercises, plans, workouts, sessions, weights, quotes, habits, nutrition] = await Promise.all(
+    ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes', 'habits', 'nutrition'].map(db.getAll));
 
   state.settings = { ...DEFAULT_SETTINGS, ...(settings[0] || {}) };
   fill(state.exercises, exercises);
@@ -51,12 +53,17 @@ export async function load() {
   fill(state.sessions, sessions);
   fill(state.weights, weights);
   fill(state.quotes, quotes);
+  fill(state.habits, habits);
+  fill(state.nutrition, nutrition);
 
   if (!state.settings.seeded && exercises.length === 0) {
     await seedStarterData();
   }
   if (!state.quotes.size && !state.settings.quotesSeeded) {
     await seedQuotes();
+  }
+  if (!state.habits.size && !state.settings.habitsSeeded) {
+    await seedHabits();
   }
   return state;
 }
@@ -77,6 +84,13 @@ async function seedStarterData() {
   fill(state.plans, plans);
   fill(state.workouts, workouts);
   await saveSettings({ seeded: true, activePlanId });
+}
+
+async function seedHabits() {
+  const rows = SEED_HABITS();
+  await db.putMany('habits', rows);
+  fill(state.habits, rows);
+  await saveSettings({ habitsSeeded: true });
 }
 
 async function seedQuotes() {
@@ -764,12 +778,121 @@ function unquote(s) {
     .trim();
 }
 
+/* ------------------------------------------------------ habits & eating
+   Deliberately un-counted. Habits are behaviours you either did or didn't,
+   the day gets one of three ratings, and off-days can carry a trigger tag.
+   Nothing here is ever converted into calories or offset against training. */
+
+export const RATINGS = [
+  { id: 'on', label: 'On plan', tone: 'good' },
+  { id: 'wobbly', label: 'Wobbly', tone: 'warn' },
+  { id: 'off', label: 'Off the cliff', tone: 'danger' },
+];
+
+export const TRIGGERS = [
+  'Late night', 'Stress', 'Social', 'Restaurant', 'Overtired',
+  'Bored', 'Too hungry', 'Celebration', 'Travel', 'Just because',
+];
+
+export function allHabits({ includeInactive = false } = {}) {
+  return [...state.habits.values()]
+    .filter((h) => includeInactive || h.active !== false)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export function newHabit(patch = {}) {
+  return { id: uid('hb'), name: '', note: '', order: allHabits().length, active: true, ...patch };
+}
+
+export async function saveHabit(h) {
+  state.habits.set(h.id, h);
+  await db.put('habits', h);
+  emit();
+  return h;
+}
+
+export async function deleteHabit(id) {
+  state.habits.delete(id);
+  await db.remove('habits', id);
+  emit();
+}
+
+/** The nutrition record for a day, created empty if it doesn't exist yet. */
+export function nutritionOn(date) {
+  return state.nutrition.get(date) || { id: date, date, checked: {}, rating: null, triggers: [], note: '' };
+}
+
+async function saveNutrition(rec) {
+  state.nutrition.set(rec.date, rec);
+  await db.put('nutrition', rec);
+  emit();
+  return rec;
+}
+
+export async function toggleHabit(date, habitId) {
+  const rec = { ...nutritionOn(date), checked: { ...nutritionOn(date).checked } };
+  rec.checked[habitId] = !rec.checked[habitId];
+  if (!rec.checked[habitId]) delete rec.checked[habitId];
+  return saveNutrition(rec);
+}
+
+export async function setRating(date, rating) {
+  const rec = { ...nutritionOn(date) };
+  rec.rating = rec.rating === rating ? null : rating;   // tapping again clears it
+  if (rec.rating === 'on') rec.triggers = [];
+  return saveNutrition(rec);
+}
+
+export async function setTriggers(date, triggers, note = undefined) {
+  const rec = { ...nutritionOn(date), triggers: [...triggers] };
+  if (note !== undefined) rec.note = note;
+  return saveNutrition(rec);
+}
+
+export function habitsDoneOn(date) {
+  const rec = nutritionOn(date);
+  const habits = allHabits();
+  return { done: habits.filter((h) => rec.checked[h.id]).length, total: habits.length };
+}
+
+/**
+ * Rolling window rather than a streak. A single bad day costs one square,
+ * never the whole record — an all-or-nothing streak just invites writing off
+ * the rest of the week.
+ */
+export function nutritionWindow(date = todayISO(), days = 30) {
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = addDays(date, -i);
+    const rec = state.nutrition.get(d);
+    out.push({ date: d, rating: rec?.rating || null, habits: habitsDoneOn(d) });
+  }
+  const onPlan = out.filter((x) => x.rating === 'on').length;
+  const wobbly = out.filter((x) => x.rating === 'wobbly').length;
+  const off = out.filter((x) => x.rating === 'off').length;
+  return { days: out, onPlan, wobbly, off, logged: onPlan + wobbly + off, total: days };
+}
+
+/** What actually derails the off days, most common first. */
+export function triggerCounts(date = todayISO(), days = 42) {
+  const from = addDays(date, -(days - 1));
+  const counts = new Map();
+  for (const rec of state.nutrition.values()) {
+    if (rec.date < from || rec.date > date) continue;
+    if (rec.rating === 'on') continue;
+    for (const t of rec.triggers || []) counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 /* ------------------------------------------------------- export / import */
 
 export async function exportData() {
   return {
     format: 'liftlog',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     settings: state.settings,
     exercises: [...state.exercises.values()],
@@ -778,6 +901,8 @@ export async function exportData() {
     sessions: [...state.sessions.values()],
     weights: [...state.weights.values()],
     quotes: [...state.quotes.values()],
+    habits: [...state.habits.values()],
+    nutrition: [...state.nutrition.values()],
   };
 }
 
@@ -794,6 +919,8 @@ export async function importData(data, { replace = true } = {}) {
     db.putMany('sessions', data.sessions || []),
     db.putMany('weights', data.weights || []),
     db.putMany('quotes', data.quotes || []),
+    db.putMany('habits', data.habits || []),
+    db.putMany('nutrition', data.nutrition || []),
   ]);
   await load();
   emit();
@@ -805,5 +932,6 @@ export async function wipe() {
   state.exercises.clear(); state.plans.clear();
   state.workouts.clear(); state.sessions.clear();
   state.weights.clear(); state.quotes.clear();
+  state.habits.clear(); state.nutrition.clear();
   emit();
 }

@@ -397,6 +397,94 @@ await step('tapping a covered workout offers view / swap / repeat', async () => 
   if (/\/session\//.test(page.url())) throw new Error('started a duplicate session instead of asking');
 });
 
+/* ------------------------------------------------------------- nutrition */
+
+await step('daily habits seed and tick off', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(700);
+  const rows = page.locator('[data-habit]');
+  const n = await rows.count();
+  if (n !== 3) throw new Error('expected 3 seeded habits, got ' + n);
+  const names = await rows.locator('.row-title').allTextContents();
+  console.log('     habits: ' + names.map((s) => s.trim()).join(' | '));
+  if (!names.join(' ').includes('6:30pm')) throw new Error('6:30pm cut-off not seeded');
+
+  await rows.nth(0).click();
+  await page.waitForTimeout(400);
+  if (!(await rows.nth(0).locator('.tick.on').count())) throw new Error('habit tick did not stick');
+});
+
+await step('rating a rough day shows the anti-compensation message', async () => {
+  await page.locator('[data-rate="off"]').click();
+  await page.waitForSelector('.sheet-body');
+  await page.waitForTimeout(600);          // let the slide-up + fade finish before the shot
+  const body = (await page.locator('.sheet-body').textContent()).replace(/\s+/g, ' ');
+  if (!/can't be cancelled out by training harder/.test(body)) {
+    throw new Error('missing the point of the whole feature: ' + body.slice(0, 160));
+  }
+  await page.screenshot({ path: `${SHOTS}/16-trigger.png` });
+});
+
+await step('trigger tags save and surface in Goals', async () => {
+  await page.locator('.sheet [data-trig="Late night"]').click();
+  await page.locator('.sheet [data-trig="Stress"]').click();
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(600);
+
+  const tags = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+    return s.nutritionOn(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`).triggers;
+  });
+  if (tags.length !== 2) throw new Error('triggers not saved: ' + JSON.stringify(tags));
+
+  await page.goto('http://localhost:8765/index.html#/goals?tab=nutrition');
+  await page.waitForTimeout(700);
+  const panel = (await page.locator('#view').textContent()).replace(/\s+/g, ' ');
+  if (!/Late night/.test(panel)) throw new Error('trigger not shown in Goals');
+  if (!(await page.locator('.daygrid .dg-off').count())) throw new Error('off day missing from the 30-day grid');
+  await page.screenshot({ path: `${SHOTS}/17-nutrition.png` });
+});
+
+await step('eating never quotes calorie maths or offsets training', async () => {
+  // The user's own habit names are their business ("No mindless calories").
+  // What must never appear is the app doing calorie arithmetic, or tying
+  // eating to training as something you can work off.
+  const text = (await page.evaluate(() => {
+    const clone = document.querySelector('#view').cloneNode(true);
+    clone.querySelectorAll('[data-habitrow], [data-habit]').forEach((n) => n.remove());
+    return clone.textContent;
+  })).toLowerCase();
+
+  const banned = ['calories burned', 'calories b', 'kcal', 'macro', 'net calories',
+    'calorie target', 'calorie goal', 'burn off', 'work it off', 'earned back'];
+  for (const b of banned) {
+    if (text.includes(b)) throw new Error(`nutrition panel says "${b}"`);
+  }
+  if (!/never offset against training|tracked separately/.test(text)) {
+    throw new Error('the separation-from-training note is missing');
+  }
+});
+
+await step('habits can be added and deleted', async () => {
+  await page.locator('[data-addhabit]').click();
+  await page.waitForSelector('.sheet [name=name]');
+  await page.locator('.sheet [name=name]').fill('Water before coffee');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(600);
+  let n = await page.locator('[data-habitrow]').count();
+  if (n !== 4) throw new Error('habit not added, count=' + n);
+
+  await page.locator('[data-habitmenu]').last().click();
+  await page.waitForTimeout(400);
+  await page.locator('.sheet [data-val="del"]').click();
+  await page.waitForSelector('[data-sheet-ok]');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(600);
+  n = await page.locator('[data-habitrow]').count();
+  if (n !== 3) throw new Error('habit not deleted, count=' + n);
+});
+
 await step('export produces valid json', async () => {
   const json = await page.evaluate(async () => JSON.stringify(await window.LiftLog.store.exportData()).length);
   if (json < 1000) throw new Error('export looks empty: ' + json);
