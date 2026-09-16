@@ -499,6 +499,68 @@ await step('habits can be added and deleted', async () => {
   if (n !== 3) throw new Error('habit not deleted, count=' + n);
 });
 
+await step('a Custom check-off workout does not ask for sets and reps', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-quick="custom"]');
+  await page.locator('.sheet [data-quick="custom"]').click();
+  await page.waitForSelector('.sheet [name=name]');
+
+  // Custom must default to duration + check-off.
+  const kind = await page.locator('.sheet [name=kind]').inputValue();
+  const mode = await page.locator('.sheet [name=mode]').inputValue();
+  if (kind !== 'custom' || mode !== 'simple') throw new Error(`defaults wrong: ${kind}/${mode}`);
+
+  await page.locator('.sheet [name=name]').fill('Hockey');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(800);
+
+  if (await page.locator('.set-row').count()) throw new Error('Hockey session is asking for sets');
+  if (!(await page.locator('[data-field="duration"]').count())) throw new Error('no minutes field');
+  await page.locator('[data-field="duration"]').fill('60');
+  await page.locator('[data-done-toggle]').click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${SHOTS}/18-activity.png` });
+});
+
+await step('picking a log style is not overwritten by changing the type', async () => {
+  await page.goto('http://localhost:8765/index.html#/plans');
+  await page.waitForTimeout(500);
+  await page.locator('[data-plan]').first().click();
+  await page.waitForTimeout(500);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [name=mode]');
+
+  // Choose the style FIRST, then the type — the old code silently reverted it.
+  await page.locator('.sheet [name=mode]').selectOption('simple');
+  await page.locator('.sheet [name=kind]').selectOption('lift');
+  const mode = await page.locator('.sheet [name=mode]').inputValue();
+  if (mode !== 'simple') throw new Error('log style was overwritten by the type change');
+
+  await page.locator('.sheet [name=name]').fill('Pickleball');
+  await page.locator('.sheet [name=kind]').selectOption('custom');
+  await page.locator('[data-sheet-ok]').click();
+  await page.waitForTimeout(800);
+  const saved = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    return [...s.state.workouts.values()].find((w) => w.name === 'Pickleball')?.mode;
+  });
+  if (saved !== 'simple') throw new Error('saved workout mode is ' + saved);
+});
+
+await step('the 30-day eating strip shows on Today', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(700);
+  const squares = await page.locator('.grid-block .daygrid .dg').count();
+  if (squares !== 30) throw new Error('expected 30 squares on Today, got ' + squares);
+  const key = (await page.locator('.grid-block .daygrid-key').textContent()).replace(/s+/g, ' ');
+  for (const want of ['on plan', 'wobbly', 'off', 'not rated']) {
+    if (!key.includes(want)) throw new Error('legend missing ' + want);
+  }
+  console.log('     ' + key.trim());
+});
+
 await step('export produces valid json', async () => {
   const json = await page.evaluate(async () => JSON.stringify(await window.LiftLog.store.exportData()).length);
   if (json < 1000) throw new Error('export looks empty: ' + json);

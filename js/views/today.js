@@ -42,7 +42,7 @@ export async function render(ctx) {
       <button class="btn primary" data-add>+ Add workout</button>
     </div>
 
-    ${dailyCard(date)}
+    ${dailyCard(date, { grid: true })}
 
     ${weekCard(progress, date)}
 
@@ -511,10 +511,31 @@ function customSheet(date, ctx) {
         </select></div>
       <div class="field"><label>Log style</label>
         <select name="mode">
-          <option value="exercises">Exercises &amp; sets</option>
-          <option value="simple">Just check it off</option>
-        </select></div>`,
+          <option value="exercises">${store.MODE_LABEL.exercises}</option>
+          <option value="simple">${store.MODE_LABEL.simple}</option>
+        </select>
+        <div class="tiny dim" style="margin-top:5px" data-modehint></div></div>`,
     confirm: 'Start',
+    onMount(b) {
+      const kind = b.querySelector('[name=kind]');
+      const mode = b.querySelector('[name=mode]');
+      const hint = b.querySelector('[data-modehint]');
+      let touched = false;
+
+      mode.addEventListener('change', () => { touched = true; describe(); });
+      kind.addEventListener('change', () => {
+        if (!touched) mode.value = store.defaultModeFor(kind.value);
+        describe();
+      });
+      function describe() {
+        hint.textContent = mode.value === 'simple'
+          ? 'Log minutes and tick it done. Good for hockey, skating, pickleball.'
+          : 'Track each exercise, set by set.';
+      }
+      mode.value = store.defaultModeFor(kind.value);   // Custom starts on duration
+      describe();
+      setTimeout(() => b.querySelector('[name=name]')?.focus(), 60);
+    },
     onConfirm(b) {
       const name = b.querySelector('[name=name]').value.trim();
       if (!name) return false;

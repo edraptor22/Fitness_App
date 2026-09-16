@@ -8,7 +8,7 @@ import { icon } from '../icons.js';
 import { todayISO } from '../util.js';
 
 /** Check-offs + rating for one day. Returns '' when there's nothing to show. */
-export function dailyCard(date, { heading = true } = {}) {
+export function dailyCard(date, { heading = true, grid = false } = {}) {
   const habits = store.allHabits();
   const rec = store.nutritionOn(date);
   const { done, total } = store.habitsDoneOn(date);
@@ -44,6 +44,22 @@ export function dailyCard(date, { heading = true } = {}) {
         ${win.logged >= 3 ? `<div class="tiny dim" style="margin-top:9px">
           ${win.onPlan} of the last ${win.total} days on plan</div>` : ''}
       </div>
+      ${grid ? `<div class="grid-block">${dayGrid(date)}</div>` : ''}
+    </div>`;
+}
+
+/** 30-day rating strip, oldest to newest. Shared by Today and Goals. */
+export function dayGrid(date = todayISO()) {
+  const win = store.nutritionWindow(date);
+  return `
+    <div class="daygrid">
+      ${win.days.map((d) => `<i class="dg dg-${d.rating || 'none'}" title="${esc(d.date)}"></i>`).join('')}
+    </div>
+    <div class="daygrid-key tiny dim">
+      <span><i class="dg dg-on"></i> on plan ${win.onPlan}</span>
+      <span><i class="dg dg-wobbly"></i> wobbly ${win.wobbly}</span>
+      <span><i class="dg dg-off"></i> off ${win.off}</span>
+      <span><i class="dg dg-none"></i> not rated ${win.total - win.logged}</span>
     </div>`;
 }
 

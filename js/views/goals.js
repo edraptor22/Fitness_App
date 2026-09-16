@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import { esc, on, sheet, toast, menuSheet, confirmSheet, emptyState } from '../ui.js';
 import { icon, kindBadge, ring } from '../icons.js';
 import { fmtDate, fmtNum, todayISO, num, uid, clamp } from '../util.js';
-import { dailyCard, mountDaily } from './eating.js';
+import { dailyCard, mountDaily, dayGrid } from './eating.js';
 
 export async function render(ctx) {
   const settings = store.state.settings;
@@ -263,15 +263,7 @@ function nutritionPanel() {
 
     <div class="section-title">Last 30 days</div>
     <div class="card card-pad">
-      <div class="daygrid">
-        ${win.days.map((d) => `<i class="dg dg-${d.rating || 'none'}" title="${esc(d.date)}"></i>`).join('')}
-      </div>
-      <div class="daygrid-key tiny dim">
-        <span><i class="dg dg-on"></i> on plan</span>
-        <span><i class="dg dg-wobbly"></i> wobbly</span>
-        <span><i class="dg dg-off"></i> off</span>
-        <span><i class="dg dg-none"></i> not rated</span>
-      </div>
+      ${dayGrid()}
     </div>
 
     ${triggers.length ? `

@@ -130,15 +130,32 @@ function addWorkoutSheet(planId, count, ctx) {
         <select name="kind">${KIND_ORDER.map((k) => `<option value="${k}">${KIND_LABEL[k]}</option>`).join('')}</select></div>
       <div class="field"><label>Log style</label>
         <select name="mode">
-          <option value="exercises">Exercises &amp; sets</option>
-          <option value="simple">Just check it off (optional video link)</option>
-        </select></div>`,
+          <option value="exercises">${store.MODE_LABEL.exercises}</option>
+          <option value="simple">${store.MODE_LABEL.simple}</option>
+        </select>
+        <div class="tiny dim" style="margin-top:5px" data-modehint></div></div>`,
     confirm: 'Create',
     onMount(b) {
-      // Mobility defaults to the check-off style; weights default to exercises.
       const kind = b.querySelector('[name=kind]');
       const mode = b.querySelector('[name=mode]');
-      kind.addEventListener('change', () => { mode.value = kind.value === 'mobility' ? 'simple' : 'exercises'; });
+      const hint = b.querySelector('[data-modehint]');
+      let touched = false;
+
+      // Follow the type only until you pick a style yourself — silently
+      // overwriting an explicit choice is how "check it off" kept reverting.
+      mode.addEventListener('change', () => { touched = true; describe(); });
+      kind.addEventListener('change', () => {
+        if (!touched) mode.value = store.defaultModeFor(kind.value);
+        describe();
+      });
+
+      function describe() {
+        hint.textContent = mode.value === 'simple'
+          ? 'Log minutes and tick it done. Good for hockey, skating, pickleball, mobility.'
+          : 'Track each exercise, set by set.';
+      }
+      mode.value = store.defaultModeFor(kind.value);
+      describe();
     },
     onConfirm(b) {
       const name = b.querySelector('[name=name]').value.trim();

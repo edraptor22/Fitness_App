@@ -225,6 +225,19 @@ export function planWorkouts(planId) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
 }
 
+/**
+ * Sensible log style for a workout type. Lifting and plyos are sets-and-reps;
+ * mobility and activities (hockey, skating, pickleball) are time-and-tick.
+ */
+export function defaultModeFor(kind) {
+  return kind === 'lift' || kind === 'plyo' ? 'exercises' : 'simple';
+}
+
+export const MODE_LABEL = {
+  exercises: 'Exercises, sets & reps',
+  simple: 'Duration & check-off',
+};
+
 export function newWorkout(planId, patch = {}) {
   const kind = patch.kind || 'lift';
   return {
@@ -232,7 +245,7 @@ export function newWorkout(planId, patch = {}) {
     planId,
     name: '',
     kind,
-    mode: kind === 'mobility' ? 'simple' : 'exercises',
+    mode: defaultModeFor(kind),
     days: [],
     link: '',
     notes: '',

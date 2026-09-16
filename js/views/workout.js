@@ -51,7 +51,7 @@ export async function render(ctx) {
     ${simple ? `
       <div class="section-title">Details</div>
       <div class="card">
-        <div class="field"><label>Target minutes</label>
+        <div class="field"><label>Typical minutes</label>
           <input type="number" inputmode="numeric" data-f="targetDuration" value="${esc(w.targetDuration ?? '')}" placeholder="10"></div>
         <div class="field"><label>Video link (optional)</label>
           <input type="url" data-f="link" value="${esc(w.link || '')}" placeholder="https://youtube.com/watch?v=…"
