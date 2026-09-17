@@ -603,6 +603,109 @@ await step('the 30-day eating strip shows on Today', async () => {
   console.log('     ' + key.trim());
 });
 
+/* ------------------------------------------------- urge log & sequences */
+
+await step('the evening habit unfolds into a sequence', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(700);
+  const steps = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const h = s.allHabits().find((x) => /6:30/.test(x.name));
+    return { steps: h?.steps || [], after: h?.after };
+  });
+  if (steps.steps.length !== 4) throw new Error('sequence not seeded: ' + JSON.stringify(steps));
+  if (steps.after !== '18:30') throw new Error('no time gate');
+});
+
+await step('an existing install gets the sequence on upgrade', async () => {
+  await page.evaluate(async () => {
+    const s = window.LiftLog.store;
+    const h = s.allHabits().find((x) => /6:30/.test(x.name));
+    await s.saveHabit({ ...h, steps: null, after: null });
+    await s.saveSettings({ habitsSeedVersion: 1 });
+  });
+  await page.reload();
+  await page.waitForTimeout(1200);
+  const after = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const h = s.allHabits().find((x) => /6:30/.test(x.name));
+    return { n: h?.steps?.length, v: s.state.settings.habitsSeedVersion };
+  });
+  if (after.n !== 4) throw new Error('upgrade did not add steps: ' + JSON.stringify(after));
+  if (after.v !== 2) throw new Error('habits version not advanced');
+});
+
+await step('the urge flow: hungry answers close it out', async () => {
+  await page.locator('[data-urge-start]').click();
+  await page.waitForSelector('.sheet [data-h]');
+  await page.locator('.sheet [data-h="1"]').click();
+  await page.waitForTimeout(700);
+  const u = await page.evaluate(() => {
+    const all = window.LiftLog.store.allUrges();
+    return all[all.length - 1];
+  });
+  if (!u.hungry || u.outcome !== 'ate') throw new Error('hungry urge not recorded: ' + JSON.stringify(u));
+  if (await page.locator('[data-urge-clock]').count()) throw new Error('hunger should not start a timer');
+});
+
+await step('the urge flow: wanting to eat starts the 10-minute wait', async () => {
+  await page.locator('[data-urge-start]').click();
+  await page.waitForSelector('.sheet [data-h]');
+  await page.locator('.sheet [data-h="0"]').click();
+  await page.waitForSelector('.sheet [data-t]');
+  const body = (await page.locator('.sheet-body').textContent()).replace(/s+/g, ' ');
+  if (!/Bored|Stressed|Tired/.test(body)) throw new Error('no trigger list');
+  await page.locator('.sheet [data-t="tired"]').click();
+  await page.waitForTimeout(600);
+  const wait = (await page.locator('.sheet-body').textContent()).replace(/s+/g, ' ');
+  if (!/energy or comfort/.test(wait)) throw new Error('no replacement shown: ' + wait.slice(0, 120));
+  await page.screenshot({ path: `${SHOTS}/19-urge-wait.png` });
+  await page.waitForTimeout(2600);   // the step sheet closes itself
+  await page.waitForTimeout(400);
+  const clock = await page.locator('[data-urge-clock]').textContent();
+  if (!/^(9|10):/.test(clock.trim())) throw new Error('timer not running, shows ' + clock);
+});
+await shot('20-urge-live');
+
+await step('the wait survives a reload and resolves', async () => {
+  await page.reload();
+  await page.waitForTimeout(1200);
+  if (!(await page.locator('[data-urge-clock]').count())) throw new Error('pending urge lost on reload');
+  await page.locator('[data-urge-out="rode"]').click();
+  await page.waitForTimeout(700);
+  if (await page.locator('[data-urge-clock]').count()) throw new Error('urge not resolved');
+  const score = await page.evaluate(() => window.LiftLog.store.decisionScore());
+  if (score.total !== 1 || score.decided !== 1) throw new Error('score wrong: ' + JSON.stringify(score));
+});
+
+await step('the Day 140 objective and patterns render', async () => {
+  // Seed a believable evening loop so the panel has something to say.
+  await page.evaluate(async () => {
+    const s = window.LiftLog.store;
+    const p = (n) => String(n).padStart(2, '0');
+    for (let i = 0; i < 10; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i); d.setHours(20, 30, 0, 0);
+      const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      await s.saveUrge({ id: 'seed_' + i, date, at: d.toISOString(), hungry: false,
+        trigger: i % 3 === 0 ? 'bored' : 'tired', waitUntil: null,
+        outcome: i % 4 === 0 ? 'automatic' : 'rode', note: '' });
+    }
+  });
+  await page.goto('http://localhost:8765/index.html#/goals?tab=nutrition');
+  await page.waitForTimeout(900);
+  const txt = (await page.locator('#view').textContent()).replace(/s+/g, ' ');
+  if (!/Your loop:/.test(txt)) throw new Error('peak window not found: ' + txt.slice(0, 200));
+  if (!/8pm/.test(txt)) throw new Error('peak window is not the 8pm one: ' + txt.slice(0, 200));
+  if (!(await page.locator('.hourbars .hot').count())) throw new Error('histogram peak not highlighted');
+  console.log('     ' + (txt.match(/Your loop:[^.]*./) || [''])[0].trim());
+  await page.screenshot({ path: `${SHOTS}/21-patterns.png` });
+
+  await page.goto('http://localhost:8765/index.html#/goals');
+  await page.waitForTimeout(700);
+  const hero = (await page.locator('#view').textContent()).replace(/s+/g, ' ');
+  if (!/I decide when I eat/.test(hero)) throw new Error('objective missing from the countdown');
+});
+
 await step('export produces valid json', async () => {
   const json = await page.evaluate(async () => JSON.stringify(await window.LiftLog.store.exportData()).length);
   if (json < 1000) throw new Error('export looks empty: ' + json);

@@ -636,3 +636,79 @@ a { color: var(--accent); text-decoration: none; }
 
 /* 30-day eating strip when it sits inside the daily card */
 .grid-block { padding: 12px 14px 14px; border-top: 1px solid var(--line-soft); }
+
+/* ---------------------------------------------------- urges & sequences */
+
+.urge-btn {
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 650;
+  margin-bottom: 12px;
+  min-height: 48px;
+}
+
+.urge-live { border-color: var(--accent); }
+.urge-head { display: flex; align-items: center; gap: 12px; padding: 13px 14px 8px; }
+.urge-clock {
+  font-size: 26px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.urge-clock.up { color: var(--good); }
+.urge-suggest {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 0 14px 12px;
+}
+.urge-suggest span {
+  font-size: 12.5px; padding: 5px 10px; border-radius: 999px;
+  background: var(--chip); color: var(--text-2);
+}
+.urge-outcomes {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 10px 14px 12px; border-top: 1px solid var(--line-soft);
+}
+.urge-outcomes .btn { min-height: 42px; font-size: 14.5px; }
+.urge-cancel { min-height: 38px; border-top: 1px solid var(--line-soft); }
+
+/* a habit that unfolds into a sequence */
+.steps {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 0 14px 10px 54px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.steps.folded { padding-bottom: 10px; }
+.step {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 34px; padding: 2px 0;
+  background: none; border: 0; text-align: left;
+  color: var(--text-2); font-size: 14px;
+}
+.step i {
+  width: 16px; height: 16px; flex: none; border-radius: 5px;
+  border: 1.5px solid var(--line); background: var(--surface-2);
+}
+.step.on i { background: var(--good); border-color: var(--good); }
+.step.on span { text-decoration: line-through; opacity: .55; }
+
+/* time-of-day histogram */
+.hourbars {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 72px; margin-bottom: 5px;
+}
+.hourbars > i {
+  flex: 1; background: var(--chip); border-radius: 2px 2px 0 0; min-height: 3px;
+}
+.hourbars > i.hot { background: var(--accent); }
+.hourkey { display: flex; justify-content: space-between; }
+
+.peak-note {
+  margin-top: 11px; padding: 11px 13px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: var(--accent-soft);
+  font-size: 13.5px; line-height: 1.45; color: var(--text-2);
+}
+.peak-note b { color: var(--text); }
+
+.objective { margin-top: 14px; text-align: left; }
+.objective-line { font-size: 16px; font-weight: 650; margin-top: 2px; }

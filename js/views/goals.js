@@ -6,6 +6,7 @@ import { esc, on, sheet, toast, menuSheet, confirmSheet, emptyState } from '../u
 import { icon, kindBadge, ring } from '../icons.js';
 import { fmtDate, fmtNum, todayISO, num, uid, clamp } from '../util.js';
 import { dailyCard, mountDaily, dayGrid } from './eating.js';
+import { urgePanel, decisionLine } from './eating-patterns.js';
 
 export async function render(ctx) {
   const settings = store.state.settings;
@@ -266,8 +267,10 @@ function nutritionPanel() {
       ${dayGrid()}
     </div>
 
+    ${urgePanel()}
+
     ${triggers.length ? `
-      <div class="section-title">What derails it · last 6 weeks</div>
+      <div class="section-title">Day ratings · what derailed them</div>
       <div class="card card-pad">
         ${triggers.slice(0, 6).map((t) => `
           <div style="margin-bottom:9px">
@@ -345,6 +348,7 @@ function countdownCard(ev, u) {
         : `${days === 1 ? 'day' : 'days'} · ${esc(fmtDate(ev.date, { absolute: true }))}`}</div>
       ${!past ? `
         <div class="meter" style="margin:12px 0 8px"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
+        ${decisionLine()}
         <div class="hero-stats">
           <div><b class="mono">${p.weeksLeft}</b><span>weeks left</span></div>
           <div><b class="mono">${p.sessionsDone}</b><span>sessions done</span></div>

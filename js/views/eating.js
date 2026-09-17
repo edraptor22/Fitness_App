@@ -3,7 +3,7 @@
    you happen to look for them. */
 
 import * as store from '../store.js';
-import { esc, on, sheet } from '../ui.js';
+import { esc, on, sheet, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { todayISO } from '../util.js';
 
@@ -17,15 +17,9 @@ export function dailyCard(date, { heading = true, grid = false } = {}) {
 
   return `
     ${heading ? `<div class="section-title">Eating${total ? ` · ${done}/${total}` : ''}</div>` : ''}
+    ${urgeCard(date)}
     <div class="card">
-      ${habits.map((h) => `
-        <div class="row hb-row" data-habit="${esc(h.id)}">
-          <button class="tick ${rec.checked[h.id] ? 'on' : ''}" aria-label="Mark done">${icon('check', 22)}</button>
-          <span class="grow">
-            <div class="row-title ${rec.checked[h.id] ? 'strike' : ''}">${esc(h.name)}</div>
-            ${h.note ? `<div class="row-sub tight tiny dim">${esc(h.note)}</div>` : ''}
-          </span>
-        </div>`).join('')}
+      ${habits.map((h) => habitRow(h, date, rec)).join('')}
 
       <div class="rate-block">
         <div class="tiny dim" style="margin-bottom:7px">How did today go?</div>
@@ -48,6 +42,32 @@ export function dailyCard(date, { heading = true, grid = false } = {}) {
     </div>`;
 }
 
+/** A habit row — plus its sequence, once the hour has come round. */
+function habitRow(h, date, rec) {
+  const stepsDone = store.habitStepsDone(date, h);
+  const unfolded = store.habitUnfolded(date, h);
+  const ticked = !!rec.checked[h.id];
+
+  return `
+    <div class="row hb-row" data-habit="${esc(h.id)}">
+      <button class="tick ${ticked ? 'on' : ''}" aria-label="Mark done">${icon('check', 22)}</button>
+      <span class="grow">
+        <div class="row-title ${ticked ? 'strike' : ''}">${esc(h.name)}</div>
+        ${h.note ? `<div class="row-sub tight tiny dim">${esc(h.note)}</div>` : ''}
+      </span>
+      ${stepsDone ? `<span class="chip ${stepsDone.done === stepsDone.total ? 'done' : ''}">${stepsDone.done}/${stepsDone.total}</span>` : ''}
+    </div>
+    ${h.steps?.length ? `<div class="steps ${unfolded ? '' : 'folded'}">
+      ${unfolded
+        ? h.steps.map((label, i) => {
+            const on = !!rec.checked[`${h.id}#${i}`];
+            return `<button class="step ${on ? 'on' : ''}" data-habit-step="${esc(h.id)}" data-i="${i}">
+              <i></i><span>${esc(label)}</span></button>`;
+          }).join('')
+        : `<div class="tiny dim" style="padding:2px 0 2px 54px">Unfolds at ${esc(h.after)}</div>`}
+    </div>` : ''}`;
+}
+
 /** 30-day rating strip, oldest to newest. Shared by Today and Goals. */
 export function dayGrid(date = todayISO()) {
   const win = store.nutritionWindow(date);
@@ -63,9 +83,163 @@ export function dayGrid(date = todayISO()) {
     </div>`;
 }
 
+/* ----------------------------------------------------------------- urges */
+
+/**
+ * The button, or — if a wait is running — the countdown and the three
+ * outcomes. Rendered on Today above the habits, because it's the thing you
+ * reach for at the moment it matters.
+ */
+export function urgeCard(date) {
+  if (date !== todayISO()) return '';
+  const pending = store.pendingUrge();
+  if (!pending) {
+    return `<button class="btn urge-btn block" data-urge-start>
+      ${icon('flame', 18)} I want to eat</button>`;
+  }
+
+  const trig = store.urgeTrigger(pending.trigger);
+  const left = store.waitRemaining(pending);
+  const up = left === 0;
+
+  return `
+    <div class="card urge-live">
+      <div class="urge-head">
+        <div class="grow">
+          <div class="hero-label">${up ? 'Time’s up' : 'Sit with it'}</div>
+          <div style="font-weight:700;font-size:16px;margin-top:2px">
+            ${trig ? esc(trig.label) : 'Urge'}${trig ? ` · wants ${esc(trig.wants)}` : ''}</div>
+        </div>
+        <div class="urge-clock mono ${up ? 'up' : ''}" data-urge-clock
+          data-until="${esc(pending.waitUntil || '')}">${fmtClock(left)}</div>
+      </div>
+      ${trig ? `<div class="urge-suggest">${trig.suggest.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+      <div class="urge-outcomes">
+        ${store.URGE_OUTCOMES.map((o) => `
+          <button class="btn" data-urge-out="${o.id}" data-urge-id="${esc(pending.id)}">${esc(o.label)}</button>`).join('')}
+      </div>
+      <button class="row urge-cancel" data-urge-cancel="${esc(pending.id)}">
+        <span class="grow tiny dim">Never mind — remove this</span></button>
+    </div>`;
+}
+
+function fmtClock(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** One sheet that walks the steps, so nothing can close mid-flow. */
+function urgeSheet(date, ctx) {
+  const s = sheet({ title: 'Before you eat', body: '<div data-step></div>' });
+  const slot = s.body.querySelector('[data-step]');
+
+  const askHunger = () => {
+    slot.innerHTML = `
+      <div class="card-pad" style="padding-bottom:6px">
+        <div style="font-size:17px;font-weight:650;line-height:1.35">
+          Are you physically hungry, or do you want to eat?</div>
+        <div class="small muted" style="margin-top:6px">
+          Both are fine answers. The point is to notice which one it is.</div>
+      </div>
+      <div class="card" style="margin:6px 12px 12px">
+        <button class="row" data-h="1"><span class="grow row-title">I'm actually hungry</span>
+          <span class="chev">${icon('chevron', 18)}</span></button>
+        <button class="row" data-h="0"><span class="grow row-title">I want to eat</span>
+          <span class="chev">${icon('chevron', 18)}</span></button>
+      </div>`;
+    on(slot, '[data-h]', 'click', async (e, t) => {
+      if (t.dataset.h === '1') {
+        await store.startUrge({ hungry: true, date });
+        s.close();
+        toast('Then eat — properly, sitting down');
+        ctx.refresh();
+      } else {
+        askTrigger();
+      }
+    });
+  };
+
+  const askTrigger = () => {
+    slot.innerHTML = `
+      <div class="card-pad" style="padding-bottom:6px">
+        <div style="font-size:17px;font-weight:650">What's driving it?</div>
+      </div>
+      <div class="card" style="margin:6px 12px 12px">
+        ${store.URGE_TRIGGERS.map((t) => `
+          <button class="row" data-t="${t.id}">
+            <span class="grow"><div class="row-title">${esc(t.label)}</div>
+            <div class="row-sub tight tiny dim">wants ${esc(t.wants)}</div></span>
+            <span class="chev">${icon('chevron', 18)}</span></button>`).join('')}
+      </div>`;
+    on(slot, '[data-t]', 'click', async (e, t) => {
+      const trig = store.urgeTrigger(t.dataset.t);
+      await store.startUrge({ hungry: false, trigger: trig.id, date });
+      showWait(trig);
+    });
+  };
+
+  const showWait = (trig) => {
+    slot.innerHTML = `
+      <div class="card-pad center">
+        <div class="hero-label">Ten minutes</div>
+        <div style="font-size:17px;font-weight:650;margin:6px 0 2px">
+          Your brain wants ${esc(trig.wants)}</div>
+        <div class="small muted">Not deciding now. Just not deciding yet.</div>
+      </div>
+      <div class="card" style="margin:6px 12px 10px">
+        ${trig.suggest.map((x) => `<div class="row" style="min-height:44px">
+          <span class="grow small">${esc(x)}</span></div>`).join('')}
+      </div>
+      <div class="reset-note" style="margin-bottom:14px">
+        If you still want it in ten minutes, have it — portioned, sitting down,
+        no guilt. That's a win too. The loop you're breaking is the one where
+        you never got to choose.
+      </div>`;
+    setTimeout(() => { s.close(); ctx.refresh(); }, 2600);
+  };
+
+  askHunger();
+}
+
 /** Wire the card up. Safe to call on a view that doesn't contain one. */
 export function mountDaily(root, date, ctx) {
+  on(root, '[data-urge-start]', 'click', () => urgeSheet(date, ctx));
+
+  on(root, '[data-urge-out]', 'click', async (e, t) => {
+    await store.resolveUrge(t.dataset.urgeId, t.dataset.urgeOut);
+    await ctx.refresh();
+    toast(t.dataset.urgeOut === 'automatic'
+      ? 'Logged. Next normal meal, carry on.'
+      : 'That was a decision. Logged.');
+  });
+
+  on(root, '[data-urge-cancel]', 'click', async (e, t) => {
+    await store.deleteUrge(t.dataset.urgeCancel);
+    ctx.refresh();
+  });
+
+  // Live countdown without re-rendering the whole view.
+  const clock = root.querySelector('[data-urge-clock]');
+  if (clock?.dataset.until) {
+    const tick = () => {
+      if (!clock.isConnected) return clearInterval(id);
+      const left = Math.max(0, Math.round((new Date(clock.dataset.until) - Date.now()) / 1000));
+      clock.textContent = fmtClock(left);
+      if (left === 0) { clock.classList.add('up'); clearInterval(id); }
+    };
+    const id = setInterval(tick, 1000);
+    tick();
+  }
+
+  on(root, '[data-habit-step]', 'click', async (e, t) => {
+    e.stopPropagation();
+    await store.toggleHabitStep(date, t.dataset.habitStep, Number(t.dataset.i));
+    ctx.refresh();
+  });
+
   on(root, '[data-habit]', 'click', async (e, t) => {
+    if (e.target.closest('[data-habit-step]')) return;
     await store.toggleHabit(date, t.dataset.habit);
     ctx.refresh();
   });

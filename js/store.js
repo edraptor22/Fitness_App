@@ -3,7 +3,10 @@
 
 import * as db from './db.js';
 import { uid, todayISO, weekDates, dowOf, num, bestSet, addDays, clamp, fromISO } from './util.js';
-import { SEED, SEED_QUOTES, SEED_HABITS, quotesSince, QUOTES_VERSION } from './seed.js';
+import {
+  SEED, SEED_QUOTES, SEED_HABITS, quotesSince, QUOTES_VERSION,
+  HABITS_VERSION, EVENING_SEQUENCE,
+} from './seed.js';
 
 export const state = {
   settings: null,
@@ -15,6 +18,7 @@ export const state = {
   quotes: new Map(),
   habits: new Map(),    // daily non-negotiables
   nutrition: new Map(), // keyed by date: which habits were ticked, how the day went
+  urges: new Map(),     // moment-level "I want to eat" episodes
 };
 
 const listeners = new Set();
@@ -43,8 +47,8 @@ export const DEFAULT_SETTINGS = {
 /* ------------------------------------------------------------------ boot */
 
 export async function load() {
-  const [settings, exercises, plans, workouts, sessions, weights, quotes, habits, nutrition] = await Promise.all(
-    ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes', 'habits', 'nutrition'].map(db.getAll));
+  const [settings, exercises, plans, workouts, sessions, weights, quotes, habits, nutrition, urges] = await Promise.all(
+    ['settings', 'exercises', 'plans', 'workouts', 'sessions', 'weights', 'quotes', 'habits', 'nutrition', 'urges'].map(db.getAll));
 
   state.settings = { ...DEFAULT_SETTINGS, ...(settings[0] || {}) };
   fill(state.exercises, exercises);
@@ -55,6 +59,7 @@ export async function load() {
   fill(state.quotes, quotes);
   fill(state.habits, habits);
   fill(state.nutrition, nutrition);
+  fill(state.urges, urges);
 
   if (!state.settings.seeded && exercises.length === 0) {
     await seedStarterData();
@@ -66,6 +71,8 @@ export async function load() {
   }
   if (!state.habits.size && !state.settings.habitsSeeded) {
     await seedHabits();
+  } else {
+    await upgradeHabits();
   }
   return state;
 }
@@ -92,7 +99,25 @@ async function seedHabits() {
   const rows = SEED_HABITS();
   await db.putMany('habits', rows);
   fill(state.habits, rows);
-  await saveSettings({ habitsSeeded: true });
+  await saveSettings({ habitsSeeded: true, habitsSeedVersion: HABITS_VERSION });
+}
+
+/**
+ * Turn the seeded evening cut-off into a sequence on installs that predate it.
+ * Only touches the habit if it still looks untouched — a renamed or edited one
+ * is yours and gets left alone.
+ */
+async function upgradeHabits() {
+  const from = state.settings.habitsSeedVersion ?? 1;
+  if (from >= HABITS_VERSION) return;
+
+  const target = [...state.habits.values()].find(
+    (h) => h.name === EVENING_SEQUENCE.name && !h.steps?.length);
+  if (target) {
+    await saveHabit({ ...target, note: EVENING_SEQUENCE.note,
+      after: EVENING_SEQUENCE.after, steps: [...EVENING_SEQUENCE.steps] });
+  }
+  await saveSettings({ habitsSeedVersion: HABITS_VERSION });
 }
 
 async function seedQuotes() {
@@ -872,9 +897,17 @@ async function saveNutrition(rec) {
 }
 
 export async function toggleHabit(date, habitId) {
-  const rec = { ...nutritionOn(date), checked: { ...nutritionOn(date).checked } };
-  rec.checked[habitId] = !rec.checked[habitId];
-  if (!rec.checked[habitId]) delete rec.checked[habitId];
+  const cur = nutritionOn(date);
+  const rec = { ...cur, checked: { ...cur.checked } };
+  const next = !rec.checked[habitId];
+  next ? (rec.checked[habitId] = true) : delete rec.checked[habitId];
+
+  // Ticking a sequence as a whole ticks its steps, so the two never disagree.
+  const h = state.habits.get(habitId);
+  for (let i = 0; i < (h?.steps?.length || 0); i++) {
+    const key = `${habitId}#${i}`;
+    next ? (rec.checked[key] = true) : delete rec.checked[key];
+  }
   return saveNutrition(rec);
 }
 
@@ -889,6 +922,38 @@ export async function setTriggers(date, triggers, note = undefined) {
   const rec = { ...nutritionOn(date), triggers: [...triggers] };
   if (note !== undefined) rec.note = note;
   return saveNutrition(rec);
+}
+
+/** Tick one step of a sequenced habit; the parent completes when all do. */
+export async function toggleHabitStep(date, habitId, index) {
+  const cur = nutritionOn(date);
+  const rec = { ...cur, checked: { ...cur.checked } };
+  const key = `${habitId}#${index}`;
+  rec.checked[key] ? delete rec.checked[key] : (rec.checked[key] = true);
+
+  const h = state.habits.get(habitId);
+  if (h?.steps?.length) {
+    const all = h.steps.every((_, i) => rec.checked[`${habitId}#${i}`]);
+    all ? (rec.checked[habitId] = true) : delete rec.checked[habitId];
+  }
+  return saveNutrition(rec);
+}
+
+export function habitStepsDone(date, habit) {
+  const rec = nutritionOn(date);
+  if (!habit.steps?.length) return null;
+  return {
+    done: habit.steps.filter((_, i) => rec.checked[`${habit.id}#${i}`]).length,
+    total: habit.steps.length,
+  };
+}
+
+/** A sequence only unfolds once its hour arrives — and only for today. */
+export function habitUnfolded(date, habit) {
+  if (!habit.after || date !== todayISO()) return true;
+  const [h, m] = habit.after.split(':').map(Number);
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
 }
 
 export function habitsDoneOn(date) {
@@ -929,12 +994,141 @@ export function triggerCounts(date = todayISO(), days = 42) {
     .sort((a, b) => b.count - a.count);
 }
 
+/* --------------------------------------------------------------- urges
+   The moment-level log. Day ratings can tell you September was rough; only
+   timestamped episodes can tell you it's 8-9pm on the couch when you're tired.
+   Nothing here records what was eaten or how much — only the decision. */
+
+export const WAIT_MINUTES = 10;
+
+export const URGE_TRIGGERS = [
+  { id: 'bored',    label: 'Bored',    wants: 'stimulation',
+    suggest: ['Walk round the block', 'Put music on', 'Shower', 'Text someone', 'Pick the hobby back up'] },
+  { id: 'stressed', label: 'Stressed', wants: 'relief',
+    suggest: ['Five minutes outside', 'Slow breathing', 'Music', 'Walk it off'] },
+  { id: 'tired',    label: 'Tired',    wants: 'energy or comfort',
+    suggest: ['Water first', 'Tea or coffee', 'Lie down for ten', 'Earlier bedtime tonight'] },
+  { id: 'habit',    label: 'Just habit', wants: 'the reward it expects',
+    suggest: ['Change rooms', 'Change what your hands are doing', 'Start the evening routine early'] },
+  { id: 'craving',  label: 'Craving something', wants: 'pleasure',
+    suggest: ['Wait the ten', 'Still want it? Portion it, sit down, enjoy it properly'] },
+];
+
+export const URGE_OUTCOMES = [
+  { id: 'rode',       label: 'Rode it out',         decided: true },
+  { id: 'deliberate', label: 'Ate it deliberately', decided: true },
+  { id: 'automatic',  label: 'Ate it automatically', decided: false },
+];
+
+export const urgeTrigger = (id) => URGE_TRIGGERS.find((t) => t.id === id) || null;
+
+export function allUrges() {
+  return [...state.urges.values()].sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+}
+
+export function urgesOn(date) {
+  return allUrges().filter((u) => u.date === date);
+}
+
+/** An urge whose wait is still running, or finished but unanswered. */
+export function pendingUrge() {
+  return allUrges().find((u) => !u.hungry && !u.outcome) || null;
+}
+
+export async function saveUrge(u) {
+  state.urges.set(u.id, u);
+  await db.put('urges', u);
+  emit();
+  return u;
+}
+
+export async function startUrge({ hungry, trigger = null, date = todayISO() }) {
+  const now = new Date();
+  const u = {
+    id: uid('ur'),
+    date,
+    at: now.toISOString(),
+    hungry: !!hungry,
+    trigger,
+    waitUntil: hungry ? null : new Date(now.getTime() + WAIT_MINUTES * 60000).toISOString(),
+    outcome: hungry ? 'ate' : null,
+    note: '',
+  };
+  return saveUrge(u);
+}
+
+export async function resolveUrge(id, outcome) {
+  const u = state.urges.get(id);
+  if (!u) return null;
+  return saveUrge({ ...u, outcome, resolvedAt: new Date().toISOString() });
+}
+
+export async function deleteUrge(id) {
+  state.urges.delete(id);
+  await db.remove('urges', id);
+  emit();
+}
+
+/** Seconds left on a pending wait, or 0 once it's up. */
+export function waitRemaining(u) {
+  if (!u?.waitUntil) return 0;
+  return Math.max(0, Math.round((new Date(u.waitUntil) - Date.now()) / 1000));
+}
+
+/**
+ * The Day 140 objective: "I decide when I eat."
+ * Scored over non-hunger urges — riding it out and eating it on purpose both
+ * count as deciding. Only automatic eating doesn't.
+ */
+export function decisionScore(days = 14, date = todayISO()) {
+  const from = addDays(date, -(days - 1));
+  const rows = allUrges().filter((u) => !u.hungry && u.outcome && u.date >= from && u.date <= date);
+  const decided = rows.filter((u) => URGE_OUTCOMES.find((o) => o.id === u.outcome)?.decided).length;
+  return { total: rows.length, decided, pct: rows.length ? decided / rows.length : null, days };
+}
+
+/** Urges per hour of the day — this is what names the loop. */
+export function urgesByHour(days = 42, date = todayISO()) {
+  const from = addDays(date, -(days - 1));
+  const hours = Array.from({ length: 24 }, () => 0);
+  for (const u of allUrges()) {
+    if (u.hungry || u.date < from || u.date > date) continue;
+    hours[new Date(u.at).getHours()]++;
+  }
+  return hours;
+}
+
+/** The busiest two-hour window, for the "your loop is…" line. */
+export function peakWindow(days = 42, date = todayISO()) {
+  const hours = urgesByHour(days, date);
+  const total = hours.reduce((a, b) => a + b, 0);
+  if (total < 4) return null;
+  let best = 0, bestAt = 0;
+  for (let h = 0; h < 23; h++) {
+    const sum = hours[h] + hours[h + 1];
+    if (sum > best) { best = sum; bestAt = h; }
+  }
+  return best >= 3 ? { hour: bestAt, count: best, share: best / total } : null;
+}
+
+export function urgeTriggerCounts(days = 42, date = todayISO()) {
+  const from = addDays(date, -(days - 1));
+  const counts = new Map();
+  for (const u of allUrges()) {
+    if (u.hungry || !u.trigger || u.date < from || u.date > date) continue;
+    counts.set(u.trigger, (counts.get(u.trigger) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([id, count]) => ({ id, label: urgeTrigger(id)?.label || id, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 /* ------------------------------------------------------- export / import */
 
 export async function exportData() {
   return {
     format: 'liftlog',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     settings: state.settings,
     exercises: [...state.exercises.values()],
@@ -945,6 +1139,7 @@ export async function exportData() {
     quotes: [...state.quotes.values()],
     habits: [...state.habits.values()],
     nutrition: [...state.nutrition.values()],
+    urges: [...state.urges.values()],
   };
 }
 
@@ -963,6 +1158,7 @@ export async function importData(data, { replace = true } = {}) {
     db.putMany('quotes', data.quotes || []),
     db.putMany('habits', data.habits || []),
     db.putMany('nutrition', data.nutrition || []),
+    db.putMany('urges', data.urges || []),
   ]);
   await load();
   emit();
@@ -974,6 +1170,6 @@ export async function wipe() {
   state.exercises.clear(); state.plans.clear();
   state.workouts.clear(); state.sessions.clear();
   state.weights.clear(); state.quotes.clear();
-  state.habits.clear(); state.nutrition.clear();
+  state.habits.clear(); state.nutrition.clear(); state.urges.clear();
   emit();
 }

@@ -6,6 +6,7 @@ import { esc, on, sheet, toast, emptyState, menuSheet, confirmSheet } from '../u
 import { icon, kindBadge, ring } from '../icons.js';
 import { celebrate } from './goals.js';
 import { dailyCard, mountDaily } from './eating.js';
+import { decisionLine } from './eating-patterns.js';
 import {
   todayISO, addDays, fmtDate, fmtAgo, fmtNum, KIND_LABEL, KIND_ORDER, weekDates, dowOf, DOW_SHORT, DOW_NAME, pluralize,
 } from '../util.js';
@@ -193,6 +194,7 @@ function countdownStrip() {
         </div>
       </div>
       <div class="meter" style="margin-top:10px"><i style="width:${(p.pct * 100).toFixed(1)}%"></i></div>
+      ${decisionLine({ compact: true })}
     </div>`;
 }
 

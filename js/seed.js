@@ -136,12 +136,24 @@ export function SEED() {
 
 /* Daily non-negotiables. Behaviours, not quantities — nothing here is counted.
    Editable and deletable from Goals → Nutrition. */
+export const HABITS_VERSION = 2;
+
+/* The evening cut-off works as a sequence, not a bare rule: a rule is
+   something to resist at your weakest moment, a sequence is something to
+   follow. Steps tick individually and the habit completes when they all do. */
+export const EVENING_SEQUENCE = {
+  name: 'Kitchen closed after 6:30pm',
+  note: 'Run the sequence — it holds where a rule slips.',
+  after: '18:30',
+  steps: ['Kitchen closed', 'Tea or water', 'Brush teeth', 'Sit down'],
+};
+
 export function SEED_HABITS() {
   return [
-    ['Kitchen closed after 6:30pm', 'Nothing after the cut-off. Decide before you are hungry.'],
-    ['Creatine + multivitamin', 'Both, every day.'],
-    ['No mindless calories', 'Eat on purpose. Ask what your body actually needs.'],
-  ].map(([name, note], i) => ({ id: uid('hb'), name, note, order: i, active: true }));
+    { ...EVENING_SEQUENCE },
+    { name: 'Creatine + multivitamin', note: 'Both, every day.' },
+    { name: 'No mindless calories', note: 'Eat on purpose. Ask what your body actually needs.' },
+  ].map((h, i) => ({ id: uid('hb'), note: '', steps: null, after: null, order: i, active: true, ...h }));
 }
 
 /* The daily quote rotation, in versioned batches. A batch newer than the
