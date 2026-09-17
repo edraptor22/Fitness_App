@@ -386,9 +386,25 @@ export async function startSession({ workoutTemplate = null, date = todayISO(), 
   return s;
 }
 
+/**
+ * How a session for a single exercise should be logged. An activity you just
+ * put time into — hockey, skating, pickleball — is a check-off with minutes,
+ * not three sets of anything.
+ */
+export function sessionShapeFor(ex) {
+  if (!ex) return 'exercises';
+  const t = ex.track || {};
+  const timedOnly = t.duration && !t.reps && !t.weight && !t.distance;
+  return ex.kind === 'custom' && timedOnly ? 'simple' : 'exercises';
+}
+
 export function buildEntry(ex, item = {}, date = todayISO()) {
   const last = lastPerformance(ex.id, date);
-  const targetSets = item.targetSets || last?.sets.length || 3;
+  // Three sets is right for lifting. Anything measured only in time or
+  // distance starts at one — you do a run, not three sets of a run.
+  const t = ex.track || {};
+  const fallback = t.reps || t.weight ? 3 : 1;
+  const targetSets = item.targetSets || last?.sets.length || fallback;
   let sets = [];
 
   if (last && last.sets.length) {
@@ -1103,10 +1119,12 @@ export function peakWindow(days = 42, date = todayISO()) {
   const hours = urgesByHour(days, date);
   const total = hours.reduce((a, b) => a + b, 0);
   if (total < 4) return null;
-  let best = 0, bestAt = 0;
+  let best = -1, bestAt = 0;
   for (let h = 0; h < 23; h++) {
     const sum = hours[h] + hours[h + 1];
-    if (sum > best) { best = sum; bestAt = h; }
+    // On a tie, start the window where the mass actually is — otherwise a
+    // quiet 7pm paired with a busy 8pm reports as "7pm".
+    if (sum > best || (sum === best && hours[h] > hours[bestAt])) { best = sum; bestAt = h; }
   }
   return best >= 3 ? { hour: bestAt, count: best, share: best / total } : null;
 }

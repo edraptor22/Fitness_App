@@ -478,24 +478,15 @@ function addSheet(date, ctx) {
       });
 
       on(b, '[data-ex]', 'click', async (e, t) => {
-        const ex = store.exercise(t.dataset.ex);
-        const created = await store.startSession({ date, name: ex.name, kind: ex.kind, mode: 'exercises' });
-        created.entries = [store.buildEntry(ex, {}, date)];
-        await store.saveSession(created);
         close();
-        ctx.go(`/session/${created.id}`);
+        await startExerciseSession(store.exercise(t.dataset.ex), date, ctx);
       });
 
       on(b, '[data-quick]', 'click', async (e, t) => {
         close();
         if (t.dataset.quick === 'custom') return customSheet(date, ctx);
         // "Single exercise" with no search term: show the full library.
-        pickExerciseSheet(async (ex) => {
-          const created = await store.startSession({ date, name: ex.name, kind: ex.kind, mode: 'exercises' });
-          created.entries = [store.buildEntry(ex, {}, date)];
-          await store.saveSession(created);
-          ctx.go(`/session/${created.id}`);
-        });
+        pickExerciseSheet((ex) => startExerciseSession(ex, date, ctx));
       });
     },
   });
@@ -546,6 +537,19 @@ function customSheet(date, ctx) {
       store.startSession({ date, name, kind, mode }).then((s) => ctx.go(`/session/${s.id}`));
     },
   });
+}
+
+/**
+ * Start a session for one exercise, shaped by what that exercise actually
+ * tracks — a timed activity gets the check-off card, everything else gets sets.
+ */
+async function startExerciseSession(ex, date, ctx) {
+  const mode = store.sessionShapeFor(ex);
+  const created = await store.startSession({ date, name: ex.name, kind: ex.kind, mode });
+  if (mode === 'exercises') created.entries = [store.buildEntry(ex, {}, date)];
+  created.link = ex.link || '';
+  await store.saveSession(created);
+  ctx.go(`/session/${created.id}`);
 }
 
 /** Reusable exercise picker. Calls back with the chosen exercise. */

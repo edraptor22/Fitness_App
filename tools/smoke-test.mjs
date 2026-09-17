@@ -706,6 +706,54 @@ await step('the Day 140 objective and patterns render', async () => {
   if (!/I decide when I eat/.test(hero)) throw new Error('objective missing from the countdown');
 });
 
+await step('a timed activity picked as a single exercise is a check-off, not sets', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill('Hockey');
+  await page.waitForTimeout(300);
+  const hit = page.locator('.sheet [data-ex]');
+  if (!(await hit.count())) throw new Error('Hockey is not in the library');
+  await hit.first().click();
+  await page.waitForTimeout(900);
+
+  if (await page.locator('.set-row').count()) throw new Error('Hockey opened with set rows');
+  if (!(await page.locator('[data-field="duration"]').count())) throw new Error('no minutes field');
+  if (!(await page.locator('[data-done-toggle]').count())) throw new Error('no check-off');
+
+  const shape = await page.evaluate(() => {
+    const id = location.hash.split('/').pop();
+    const s = window.LiftLog.store.session(id);
+    return { mode: s.mode, kind: s.kind, name: s.name };
+  });
+  if (shape.mode !== 'simple') throw new Error(`mode is ${shape.mode} for ${shape.name}`);
+  if (shape.name !== 'Hockey') throw new Error('wrong session: ' + shape.name);
+  await page.screenshot({ path: `${SHOTS}/22-hockey.png` });
+});
+
+await step('a lift picked as a single exercise still gets three sets', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill('Bench Press');
+  await page.waitForTimeout(300);
+  await page.locator('.sheet [data-ex]').first().click();
+  await page.waitForTimeout(900);
+  const rows = await page.locator('.set-row').count();
+  if (rows !== 3) throw new Error('expected 3 sets for a lift, got ' + rows);
+});
+
+await step('a distance/time exercise starts at one set, not three', async () => {
+  const sets = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const run = s.allExercises().find((e) => e.name === 'Run');
+    return s.buildEntry(run, {}, '2030-01-01').sets.length;
+  });
+  if (sets !== 1) throw new Error('Run built ' + sets + ' sets');
+});
+
 await step('export produces valid json', async () => {
   const json = await page.evaluate(async () => JSON.stringify(await window.LiftLog.store.exportData()).length);
   if (json < 1000) throw new Error('export looks empty: ' + json);

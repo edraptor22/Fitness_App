@@ -55,9 +55,9 @@ export function SEED() {
   ex('Run', 'custom', TD, { distanceUnit: 'mi' });
   ex('Bike', 'custom', TD, { distanceUnit: 'mi' });
   ex('Swim', 'custom', TD, { distanceUnit: 'm' });
-  ex('Basketball', 'custom', T);
-  ex('Soccer', 'custom', T);
-  ex('Tennis', 'custom', T);
+  ['Hockey', 'Ice Skating', 'Pickleball', 'Basketball', 'Soccer', 'Tennis',
+   'Golf', 'Skiing', 'Hiking', 'Yoga',
+  ].forEach((n) => ex(n, 'custom', T));
   ex('Rowing', 'custom', TD, { distanceUnit: 'm' });
 
   /* ------------------------------------------------------------- plans */
