@@ -3,7 +3,7 @@
 
 import * as db from './db.js';
 import { uid, todayISO, weekDates, dowOf, num, bestSet, addDays, clamp, fromISO } from './util.js';
-import { SEED, SEED_QUOTES, SEED_HABITS } from './seed.js';
+import { SEED, SEED_QUOTES, SEED_HABITS, quotesSince, QUOTES_VERSION } from './seed.js';
 
 export const state = {
   settings: null,
@@ -61,6 +61,8 @@ export async function load() {
   }
   if (!state.quotes.size && !state.settings.quotesSeeded) {
     await seedQuotes();
+  } else {
+    await mergeNewQuotes();
   }
   if (!state.habits.size && !state.settings.habitsSeeded) {
     await seedHabits();
@@ -97,7 +99,33 @@ async function seedQuotes() {
   const rows = SEED_QUOTES();
   await db.putMany('quotes', rows);
   fill(state.quotes, rows);
-  await saveSettings({ quotesSeeded: true });
+  await saveSettings({ quotesSeeded: true, quotesSeedVersion: QUOTES_VERSION });
+}
+
+/** Compare on the words alone, so punctuation or a curly apostrophe
+    doesn't let the same line in twice. */
+const quoteKey = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/**
+ * Append quote batches added since this install was last seeded. Only newer
+ * batches are considered, so anything you deleted from an older batch stays
+ * deleted, and anything already in the list is skipped.
+ */
+async function mergeNewQuotes() {
+  const from = state.settings.quotesSeedVersion ?? 1;
+  if (from >= QUOTES_VERSION) return;
+
+  const have = new Set([...state.quotes.values()].map((q) => quoteKey(q.text)));
+  const incoming = quotesSince(from).filter((q) => !have.has(quoteKey(q.text)));
+
+  if (incoming.length) {
+    let order = Math.max(0, ...[...state.quotes.values()].map((q) => q.order ?? 0)) + 1;
+    const rows = incoming.map((q) => ({ id: uid('q'), order: order++, text: q.text, author: q.author || '' }));
+    await db.putMany('quotes', rows);
+    for (const r of rows) state.quotes.set(r.id, r);
+    _rotCache = { key: null, order: null };
+  }
+  await saveSettings({ quotesSeedVersion: QUOTES_VERSION });
 }
 
 /* ------------------------------------------------------------- settings */
@@ -763,7 +791,8 @@ export async function replaceQuotes(rows) {
   await db.putMany('quotes', built);
   fill(state.quotes, built);
   _rotCache = { key: null, order: null };
-  await saveSettings({ quotesSeeded: true });
+  // A deliberate rewrite wins — don't re-inject built-ins on the next upgrade.
+  await saveSettings({ quotesSeeded: true, quotesSeedVersion: QUOTES_VERSION });
   emit();
   return built;
 }

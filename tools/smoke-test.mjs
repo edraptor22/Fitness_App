@@ -259,6 +259,48 @@ await step('logging weight crosses a milestone and pays the reward', async () =>
 });
 await shot('14-goals-weight');
 
+await step('new quote batches merge into an existing install', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(700);
+  const total = await page.evaluate(() => window.LiftLog.store.state.quotes.size);
+  if (total !== 110) throw new Error('fresh install should have 110 quotes, got ' + total);
+
+  // Simulate the phone that's already running: batch-1 quotes only, version 1.
+  await page.evaluate(async () => {
+    const s = window.LiftLog.store;
+    const keep = s.allQuotes().slice(0, 85);
+    await s.replaceQuotes(keep.map((q) => ({ text: q.text, author: q.author })));
+    await s.saveSettings({ quotesSeedVersion: 1 });
+  });
+  await page.reload();
+  await page.waitForTimeout(1200);
+
+  const after = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const all = s.allQuotes();
+    const norm = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return {
+      count: all.length,
+      unique: new Set(all.map((q) => norm(q.text))).size,
+      version: s.state.settings.quotesSeedVersion,
+      hasNew: all.some((q) => /never miss twice/i.test(q.text)),
+      keptOld: all.some((q) => /stay hard/i.test(q.text)),
+    };
+  });
+  if (after.count !== 110) throw new Error('merge produced ' + after.count + ' quotes');
+  if (after.unique !== after.count) throw new Error('merge created duplicates');
+  if (!after.hasNew) throw new Error('new batch did not arrive');
+  if (!after.keptOld) throw new Error('existing quotes were lost');
+  if (after.version !== 2) throw new Error('version not advanced');
+
+  // Running again must be a no-op.
+  await page.reload();
+  await page.waitForTimeout(1200);
+  const again = await page.evaluate(() => window.LiftLog.store.state.quotes.size);
+  if (again !== 110) throw new Error('second load re-added quotes: ' + again);
+  console.log('     85 -> 110, no duplicates, idempotent');
+});
+
 await step('quotes can be turned off', async () => {
   await page.goto('http://localhost:8765/index.html#/settings');
   await page.waitForTimeout(500);

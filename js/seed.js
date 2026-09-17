@@ -144,9 +144,13 @@ export function SEED_HABITS() {
   ].map(([name, note], i) => ({ id: uid('hb'), name, note, order: i, active: true }));
 }
 
-/* The daily quote rotation. Settings → Daily quotes replaces the whole list. */
-export function SEED_QUOTES() {
-  return [
+/* The daily quote rotation, in versioned batches. A batch newer than the
+   install's stored quotesSeedVersion is appended on upgrade, so new quotes
+   reach existing phones without touching what's already there.
+   Bump QUOTES_VERSION whenever you add a batch. */
+export const QUOTES_VERSION = 2;
+
+const BATCH_1 = [
     /* --- David Goggins --- */
     ['Stay hard.', 'David Goggins'],
     ['You are in danger of living a life so comfortable and soft, that you will die without ever realizing your true potential.', 'David Goggins'],
@@ -247,5 +251,50 @@ export function SEED_QUOTES() {
     ['You were born to be a player. You were meant to be here. This moment is yours.', 'Herb Brooks'],
     ['You miss 100% of the shots you don’t take.', 'Wayne Gretzky'],
     ['Skate to where the puck is going, not where it has been.', 'Wayne Gretzky'],
-  ].map(([text, author], i) => ({ id: uid('q'), order: i, text, author }));
+];
+
+const BATCH_2 = [
+  /* --- consistency over intensity --- */
+  ['You do not need to be extreme. You need to be consistent.', ''],
+  ['The days will pass either way.', ''],
+  ['Win the day. Then do it again tomorrow.', ''],
+  ['You don’t have to feel motivated. You have to start.', ''],
+  ['Never miss twice.', ''],
+  ['Make the next choice a good one.', ''],
+  ['Results are built on ordinary days.', ''],
+  ['A bad workout still counts.', ''],
+  ['Don’t negotiate with the plan you made when you were motivated.', ''],
+  ['Consistency is a skill. Practice it.', ''],
+
+  /* --- train like an athlete --- */
+  ['Train for what your body can do, not just what it looks like.', ''],
+  ['Strong. Fast. Skilled. Conditioned.', ''],
+  ['Build an athlete. The physique follows.', ''],
+  ['Every rep is a vote for the athlete you’re becoming.', ''],
+  ['Don’t exercise to get tired. Train to get better.', ''],
+  ['Speed is a skill. Strength is a skill. Practice both.', ''],
+  ['Train your weaknesses until they stop being weaknesses.', ''],
+  ['Evidence builds confidence.', ''],
+  ['The work doesn’t need to be perfect. It needs to accumulate.', ''],
+
+  /* --- eating --- */
+  ['One meal can’t transform you. Neither can one bad meal.', ''],
+  ['Eat for the body you’re asking to perform.', ''],
+  ['Food is fuel, recovery, and enjoyment — not a punishment system.', ''],
+  ['You don’t need to eat less forever. You need to eat appropriately today.', ''],
+  ['Don’t turn one choice into a whole day of choices.', ''],
+  ['The goal isn’t to become good at dieting. It’s to build a body you can perform in.', ''],
+];
+
+export const QUOTE_BATCHES = [BATCH_1, BATCH_2];
+
+/** Everything, for a fresh install. */
+export function SEED_QUOTES() {
+  return QUOTE_BATCHES.flat().map(([text, author], i) => ({ id: uid('q'), order: i, text, author }));
+}
+
+/** Only the batches newer than `fromVersion`, for an upgrade. */
+export function quotesSince(fromVersion) {
+  return QUOTE_BATCHES.slice(Math.max(0, fromVersion)).flat()
+    .map(([text, author]) => ({ text, author }));
 }
