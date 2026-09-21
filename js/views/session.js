@@ -7,7 +7,7 @@ import { icon, kindBadge, ring } from '../icons.js';
 import { pickExerciseSheet } from './today.js';
 import {
   fmtDate, fmtAgo, fmtNum, num, activeMetrics, METRIC_LABEL, metricStep, metricUnit,
-  fmtSet, KIND_LABEL,
+  fmtSet, KIND_LABEL, hasValue,
 } from '../util.js';
 
 export async function render(ctx) {
@@ -39,10 +39,17 @@ export async function render(ctx) {
       persist({ [t.dataset.field]: v });
     });
 
-    /* ---- set editing ---- */
+    /* ---- set editing ----
+       data-cell is on the wrapper, so the value has to come off the event
+       target. Reading it off the wrapper yields undefined, and num(undefined)
+       is 0 — which silently overwrote every typed weight with zero. */
     on(root, '[data-cell]', 'input', (e, t) => {
-      const { entry, set, metric } = cellRef(t);
-      s.entries[entry].sets[set][metric] = t.value === '' ? '' : num(t.value);
+      const input = e.target;
+      if (input.tagName !== 'INPUT') return;
+      const { entry, set, metric } = cellRef(input);
+      const cur = s.entries[entry].sets[set];
+      cur[metric] = input.value === '' ? '' : num(input.value, '');
+      cur.touched = true;
       store.saveSession(s);
     });
 
@@ -55,6 +62,7 @@ export async function render(ctx) {
       const next = Math.max(0, Math.round((num(input.value) + step) * 100) / 100);
       input.value = fmtNum(next);
       s.entries[entry].sets[set][metric] = next;
+      s.entries[entry].sets[set].touched = true;
       store.saveSession(s);
     });
 
@@ -165,8 +173,12 @@ export async function render(ctx) {
       ctx.refresh();
       return;
     }
-    // Untouched sets are dropped rather than logged as zeroes.
     if (!simple) {
+      // Anything you actually typed into counts as performed. Only sets left
+      // exactly as they were prefilled get dropped.
+      s.entries.forEach((e) => e.sets.forEach((x) => {
+        if (x.touched && hasValue(x)) x.done = true;
+      }));
       let logged = 0;
       s.entries.forEach((e) => { e.sets.forEach((x) => { if (x.done) logged++; }); });
       if (logged === 0) {
@@ -175,7 +187,7 @@ export async function render(ctx) {
           message: 'No sets are marked done. Finish anyway and log every set as completed?',
           confirm: 'Log all sets', danger: false,
         });
-        if (!ok) return;
+        if (!ok) { toast('Not finished — nothing logged yet'); return; }
         s.entries.forEach((e) => e.sets.forEach((x) => { x.done = true; }));
       }
     }

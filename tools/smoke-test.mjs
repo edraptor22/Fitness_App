@@ -358,13 +358,20 @@ await step('delete an "Also logged" session from that menu', async () => {
 
 await step('a session can be deleted from inside itself', async () => {
   await startWorkout('Upper Body');
+  const id = await page.evaluate(() => location.hash.split('/').pop());
   await page.locator('[data-delsession]').click();
   await page.waitForSelector('[data-sheet-ok]');
   await page.locator('[data-sheet-ok]').click();
   await page.waitForTimeout(700);
   if (/\/session\//.test(page.url())) throw new Error('still on the session screen');
-  const rows = await page.locator('[data-sess-menu]').count();
-  if (rows !== 0) throw new Error('session survived deletion');
+
+  // Which sessions sit in "Also logged" depends on the weekday the suite
+  // runs, so assert this one is gone rather than that none remain.
+  const gone = await page.evaluate((id) => !window.LiftLog.store.session(id), id);
+  if (!gone) throw new Error('session survived deletion');
+  if (await page.locator('[data-sess-menu="' + id + '"]').count()) {
+    throw new Error('deleted session still on screen');
+  }
 });
 
 await step('a workout done early shows as covered on its scheduled day', async () => {
@@ -596,7 +603,7 @@ await step('the 30-day eating strip shows on Today', async () => {
   await page.waitForTimeout(700);
   const squares = await page.locator('.grid-block .daygrid .dg').count();
   if (squares !== 30) throw new Error('expected 30 squares on Today, got ' + squares);
-  const key = (await page.locator('.grid-block .daygrid-key').textContent()).replace(/s+/g, ' ');
+  const key = (await page.locator('.grid-block .daygrid-key').textContent()).replace(/\s+/g, ' ');
   for (const want of ['on plan', 'wobbly', 'off', 'not rated']) {
     if (!key.includes(want)) throw new Error('legend missing ' + want);
   }
@@ -653,11 +660,11 @@ await step('the urge flow: wanting to eat starts the 10-minute wait', async () =
   await page.waitForSelector('.sheet [data-h]');
   await page.locator('.sheet [data-h="0"]').click();
   await page.waitForSelector('.sheet [data-t]');
-  const body = (await page.locator('.sheet-body').textContent()).replace(/s+/g, ' ');
+  const body = (await page.locator('.sheet-body').textContent()).replace(/\s+/g, ' ');
   if (!/Bored|Stressed|Tired/.test(body)) throw new Error('no trigger list');
   await page.locator('.sheet [data-t="tired"]').click();
   await page.waitForTimeout(600);
-  const wait = (await page.locator('.sheet-body').textContent()).replace(/s+/g, ' ');
+  const wait = (await page.locator('.sheet-body').textContent()).replace(/\s+/g, ' ');
   if (!/energy or comfort/.test(wait)) throw new Error('no replacement shown: ' + wait.slice(0, 120));
   await page.screenshot({ path: `${SHOTS}/19-urge-wait.png` });
   await page.waitForTimeout(2600);   // the step sheet closes itself
@@ -693,7 +700,7 @@ await step('the Day 140 objective and patterns render', async () => {
   });
   await page.goto('http://localhost:8765/index.html#/goals?tab=nutrition');
   await page.waitForTimeout(900);
-  const txt = (await page.locator('#view').textContent()).replace(/s+/g, ' ');
+  const txt = (await page.locator('#view').textContent()).replace(/\s+/g, ' ');
   if (!/Your loop:/.test(txt)) throw new Error('peak window not found: ' + txt.slice(0, 200));
   if (!/8pm/.test(txt)) throw new Error('peak window is not the 8pm one: ' + txt.slice(0, 200));
   if (!(await page.locator('.hourbars .hot').count())) throw new Error('histogram peak not highlighted');
@@ -702,7 +709,7 @@ await step('the Day 140 objective and patterns render', async () => {
 
   await page.goto('http://localhost:8765/index.html#/goals');
   await page.waitForTimeout(700);
-  const hero = (await page.locator('#view').textContent()).replace(/s+/g, ' ');
+  const hero = (await page.locator('#view').textContent()).replace(/\s+/g, ' ');
   if (!/I decide when I eat/.test(hero)) throw new Error('objective missing from the countdown');
 });
 
@@ -742,7 +749,15 @@ await step('a lift picked as a single exercise still gets three sets', async () 
   await page.locator('.sheet [data-ex]').first().click();
   await page.waitForTimeout(900);
   const rows = await page.locator('.set-row').count();
-  if (rows !== 3) throw new Error('expected 3 sets for a lift, got ' + rows);
+  if (rows < 1) throw new Error('a lift got no set rows');
+  if (await page.locator('[data-done-toggle]').count()) throw new Error('a lift opened as a check-off');
+
+  const fresh = await page.evaluate(() => {
+    const s = window.LiftLog.store;
+    const ex = s.newExercise({ name: '__probe squat', kind: 'lift' });
+    return s.buildEntry(ex, {}, '2030-01-01').sets.length;   // no history
+  });
+  if (fresh !== 3) throw new Error('a fresh lift built ' + fresh + ' sets');
 });
 
 await step('a distance/time exercise starts at one set, not three', async () => {
@@ -752,6 +767,104 @@ await step('a distance/time exercise starts at one set, not three', async () => 
     return s.buildEntry(run, {}, '2030-01-01').sets.length;
   });
   if (sets !== 1) throw new Error('Run built ' + sets + ' sets');
+});
+
+/* ------------------------------------------------- typed values persist */
+
+await step('a TYPED weight is stored (not zeroed)', async () => {
+  // The old test filled a field then clicked a stepper, which overwrote the
+  // broken write with a correct one. Typing alone is the real path.
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill('Upper Body');
+  await page.waitForTimeout(250);
+  await page.locator('.sheet [data-start]').first().click();
+  await page.waitForSelector('.ex-card');
+
+  const row = page.locator('.ex-card').first().locator('.set-row').first();
+  await row.locator('.stepper input').first().fill('185');
+  await row.locator('.stepper input').nth(1).fill('7');
+  await page.waitForTimeout(400);
+
+  const id = await page.evaluate(() => location.hash.split('/').pop());
+  const set = await page.evaluate((id) => window.LiftLog.store.session(id).entries[0].sets[0], id);
+  if (Number(set.weight) !== 185) throw new Error('typed weight stored as ' + JSON.stringify(set.weight));
+  if (Number(set.reps) !== 7) throw new Error('typed reps stored as ' + JSON.stringify(set.reps));
+  if (!set.touched) throw new Error('set not marked touched');
+  console.log('     typed 185 x 7 -> stored ' + set.weight + ' x ' + set.reps);
+});
+
+await step('typed values survive a reload', async () => {
+  const id = await page.evaluate(() => location.hash.split('/').pop());
+  await page.reload();
+  await page.waitForTimeout(1200);
+  const set = await page.evaluate((id) => window.LiftLog.store.session(id).entries[0].sets[0], id);
+  if (Number(set.weight) !== 185) throw new Error('after reload: ' + JSON.stringify(set.weight));
+  const shown = await page.locator('.set-row .stepper input').first().inputValue();
+  if (shown !== '185') throw new Error('input shows ' + shown);
+});
+
+await step('typed-but-unticked sets count as logged on finish', async () => {
+  const id = await page.evaluate(() => location.hash.split('/').pop());
+  await page.locator('[data-finish]').last().click();
+  await page.waitForTimeout(700);
+  if (await page.locator('[data-sheet-ok]').count()) {
+    throw new Error('asked "nothing ticked" even though numbers were typed');
+  }
+  const s = await page.evaluate((id) => {
+    const x = window.LiftLog.store.session(id);
+    return { status: x.status, done: x.entries[0].sets.filter((y) => y.done).length };
+  }, id);
+  if (s.status !== 'done') throw new Error('status ' + s.status);
+  if (s.done < 1) throw new Error('typed set not logged');
+});
+
+await step('the previous session now shows on the next one', async () => {
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill('Upper Body');
+  await page.waitForTimeout(250);
+  await page.locator('.sheet [data-start]').first().click();
+  await page.waitForSelector('.ex-card');
+  const line = (await page.locator('.ex-last').first().textContent()).replace(/\s+/g, ' ').trim();
+  if (!/185/.test(line)) throw new Error('last-session line missing the weight: ' + line);
+  console.log('     ' + line);
+  const prefill = await page.locator('.set-row .stepper input').first().inputValue();
+  if (prefill !== '185') throw new Error('not prefilled from last time: ' + prefill);
+});
+
+await step('an abandoned finish says so instead of looking done', async () => {
+  await page.goto('http://localhost:8765/index.html#/today');
+  await page.waitForTimeout(600);
+  await page.locator('[data-add]').click();
+  await page.waitForSelector('.sheet [data-q]');
+  await page.locator('.sheet [data-q]').fill('Plyo A');
+  await page.waitForTimeout(250);
+  await page.locator('.sheet [data-start]').first().click();
+  await page.waitForSelector('.ex-card');
+  const id = await page.evaluate(() => location.hash.split('/').pop());
+
+  await page.locator('[data-finish]').last().click();
+  await page.waitForSelector('[data-sheet-ok]');
+  await page.locator('.sheet-backdrop [data-sheet-x]').first().click();
+  await page.waitForTimeout(600);
+  const toastTxt = await page.locator('.toast').count()
+    ? await page.locator('.toast').first().textContent() : '';
+  if (!/Not finished/.test(toastTxt)) throw new Error('no warning toast, got: ' + toastTxt);
+
+  // ...and it must still be findable rather than vanishing.
+  await page.goto('http://localhost:8765/index.html#/history');
+  await page.waitForTimeout(700);
+  const txt = (await page.locator('#view').textContent()).replace(/\s+/g, ' ');
+  if (!/Unfinished/.test(txt)) {
+    const n = await page.evaluate(() =>
+      window.LiftLog.store.allSessions().filter((x) => x.status !== 'done').length);
+    throw new Error(`unfinished session invisible in History (store has ${n}): ${txt.slice(0, 200)}`);
+  }
+  const listed = await page.evaluate((id) => !!document.querySelector('[data-open="' + id + '"]'), id);
+  if (!listed) throw new Error('the unfinished session is not listed');
 });
 
 await step('export produces valid json', async () => {

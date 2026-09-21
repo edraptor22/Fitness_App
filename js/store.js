@@ -782,7 +782,7 @@ function seededShuffle(arr, seed) {
 function rotation(cycle, list) {
   const groups = new Map();
   for (const q of list) {
-    const key = q.author || ' ';
+    const key = q.author || '';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(q);
   }
@@ -798,7 +798,7 @@ function rotation(cycle, list) {
     for (let i = 0; i < buckets.length; i++) {
       if (!buckets[i].length) continue;
       // Never twice from the same author in a row, unless they're all that's left.
-      if (live > 1 && (buckets[i][0].author || ' ') === (prev || ' ')) continue;
+      if (live > 1 && (buckets[i][0].author || '') === (prev || '')) continue;
       // Drain the biggest bucket first so heavy authors stay spread out.
       if (pick < 0 || buckets[i].length > buckets[pick].length) pick = i;
     }

@@ -9,6 +9,7 @@ import { fmtDate, fmtNum, KIND_LABEL, KIND_ORDER, todayISO, num, pluralize } fro
 export async function render(ctx) {
   const filter = ctx.query.get('k') || 'all';
   const all = store.allSessions().filter((s) => s.status === 'done');
+  const unfinished = store.allSessions().filter((s) => s.status !== 'done');
   const rows = filter === 'all' ? all : all.filter((s) => s.kind === filter);
 
   const week = store.weekSummary(todayISO());
@@ -41,6 +42,13 @@ export async function render(ctx) {
       ${kinds.map((k) => `<button class="chip ${k === filter ? 'accent' : ''}" data-k="${k}">
         ${k === 'all' ? 'All' : esc(KIND_LABEL[k] || k)}</button>`).join('')}
     </div>` : ''}
+
+    ${unfinished.length ? `
+      <div class="section-title">Unfinished · ${unfinished.length}</div>
+      <div class="card">${unfinished.map((s) => sessionRow(s)).join('')}</div>
+      <div class="tiny dim" style="margin:-4px 4px 4px">
+        Started but never finished, so they don't count yet. Open one and tap Finish.
+      </div>` : ''}
 
     ${groups.length ? groups.map((g) => `
       <div class="section-title">${esc(g.label)}</div>
