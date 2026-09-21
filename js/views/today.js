@@ -28,6 +28,8 @@ export async function render(ctx) {
     ${dateStrip(date, s.weekStartsOn)}
     ${weighInRow(date)}
 
+    ${dailyCard(date, { grid: true })}
+
     <div class="section-title">${plan ? esc(plan.name) : 'No plan selected'} · ${esc(fmtDate(date))}</div>
     <div class="card">
       ${scheduled.length
@@ -42,8 +44,6 @@ export async function render(ctx) {
     <div class="btn-row">
       <button class="btn primary" data-add>+ Add workout</button>
     </div>
-
-    ${dailyCard(date, { grid: true })}
 
     ${weekCard(progress, date)}
 
